@@ -1,0 +1,4 @@
+name: csyn
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

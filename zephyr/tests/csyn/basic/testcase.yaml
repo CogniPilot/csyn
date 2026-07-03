@@ -1,0 +1,40 @@
+# All integration tests run on native_sim so CI needs no hardware or cross
+# toolchains. Board targets may be added under platform_allow for optional
+# local runs, but must stay out of integration_platforms.
+common:
+  tags:
+    - csyn
+  timeout: 20
+
+tests:
+  csyn.basic:
+    tags:
+      - smoke
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+
+  csyn.basic.zros_bridge:
+    build_only: true
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_ZROS=y
+      - CONFIG_POLL=y
+      - CONFIG_CSYN_ZROS_BRIDGE=y
+
+  csyn.basic.native_udp:
+    build_only: true
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_CSYN_NATIVE_UDP=y
+      - CONFIG_REQUIRES_FULL_LIBC=y

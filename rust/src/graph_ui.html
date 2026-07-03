@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>csyn graph</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101214;
+      --panel: #181b1f;
+      --line: #333941;
+      --text: #e6e8eb;
+      --muted: #9aa3ad;
+      --topic: #5cc8ff;
+      --router: #f0b35a;
+      --peer: #9dd56d;
+      --client: #6fa8ff;
+      --publisher: #87d37c;
+      --subscriber: #c896ff;
+      --transport: #f06464;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    header {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: #15181b;
+    }
+    header strong { font-size: 16px; }
+    header span { color: var(--muted); margin-left: 12px; }
+    main {
+      height: calc(100vh - 48px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+    }
+    #graph {
+      width: 100%;
+      height: 100%;
+      background:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    aside {
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      min-width: 0;
+      overflow: auto;
+      padding: 14px;
+    }
+    h2 {
+      font-size: 13px;
+      margin: 18px 0 8px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    h2:first-child { margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      border-bottom: 1px solid #282d33;
+      padding: 6px 4px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 12px;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    code { color: #d6dee7; }
+    .pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      margin-right: 6px;
+      font-size: 12px;
+    }
+    .muted { color: var(--muted); }
+    .warn { color: #ffbf69; }
+    .error { color: #ff7b72; white-space: pre-wrap; }
+    .node text { pointer-events: none; fill: var(--text); font-size: 12px; }
+    .node .detail { fill: var(--muted); font-size: 10px; }
+    .link { stroke: #59616b; stroke-width: 1.4; marker-end: url(#arrow); }
+    .link.publisher { stroke: var(--publisher); }
+    .link.subscriber { stroke: var(--subscriber); }
+    .link.traffic { stroke: #64717e; stroke-dasharray: 4 4; }
+    .node circle { stroke-width: 2; stroke: rgba(255,255,255,.18); }
+    .node.topic circle { fill: var(--topic); }
+    .node.router circle { fill: var(--router); }
+    .node.peer circle { fill: var(--peer); }
+    .node.client circle { fill: var(--client); }
+    .node.publisher circle { fill: var(--publisher); }
+    .node.subscriber circle { fill: var(--subscriber); }
+    .node.transport circle { fill: var(--transport); }
+    .node.queryable circle, .node.querier circle, .node.token circle { fill: #9aa3ad; }
+    .node.stale { opacity: .45; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>csyn graph</strong><span id="subtitle"></span></div>
+    <div><span id="status">connecting</span></div>
+  </header>
+  <main>
+    <svg id="graph" role="img" aria-label="csyn Zenoh graph"></svg>
+    <aside>
+      <h2>Network</h2>
+      <div id="summary"></div>
+      <h2>Topics</h2>
+      <div id="topics"></div>
+      <h2>Diagnostics</h2>
+      <div id="diagnostics"></div>
+    </aside>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

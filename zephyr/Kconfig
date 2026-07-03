@@ -1,0 +1,122 @@
+config CSYN
+	bool "Enable csyn synapse topic bus"
+	default y
+	help
+	  Enable the csyn topic store: a bounded, lock-free latest-sample
+	  store for synapse topics. Topic identity (name, keyexpr, payload
+	  type, encoding) is resolved from the generated synapse_fbs topic
+	  catalog, so the wire contract is pinned to the locked synapse_fbs
+	  release.
+
+if CSYN
+
+config CSYN_FLATBUFFER_MAX_SIZE
+	int "Maximum payload size for flatbuffer-encoded topics"
+	default 512
+	range 64 4096
+	help
+	  Fixed-layout struct topics size their store slots from the catalog.
+	  Flatbuffer topics (e.g. mocap_frame) have variable size and use
+	  this bound instead.
+
+config CSYN_ZROS_BRIDGE
+	bool "Bridge csyn topics to zros"
+	depends on ZROS
+	default y
+	help
+	  Mirror csyn topics onto the in-process zros bus: inbound topics are
+	  decoded and published to zros, outbound fixed-layout topics are
+	  copied from zros to the csyn store for the active transport.
+
+config CSYN_SHELL
+	bool "Enable csyn shell diagnostics"
+	depends on SHELL
+	default y
+	help
+	  Adds csyn topic list/info/echo/hz/watch shell commands.
+
+config CSYN_SHELL_THREAD_STACK_SIZE
+	int "csyn shell watch thread stack size"
+	depends on CSYN_SHELL
+	default 2048
+	range 1024 8192
+
+config CSYN_NATIVE_UDP
+	bool "Enable native_sim csyn UDP transport"
+	depends on BOARD_NATIVE_SIM
+	default y
+	help
+	  Add a native_sim-only UDP transport for csyn topic packets. This keeps
+	  socket IO in a low-priority thread and outside the controller loop.
+
+config CSYN_NATIVE_UDP_RX_PORT
+	int "csyn native_sim UDP RX port"
+	depends on CSYN_NATIVE_UDP
+	default 4250
+	range 1 65535
+
+config CSYN_NATIVE_UDP_TX_PORT
+	int "csyn native_sim UDP TX port"
+	depends on CSYN_NATIVE_UDP
+	default 4251
+	range 1 65535
+
+config CSYN_NATIVE_UDP_HOST
+	string "csyn native_sim UDP host"
+	depends on CSYN_NATIVE_UDP
+	default "127.0.0.1"
+
+config CSYN_NATIVE_UDP_THREAD_STACK_SIZE
+	int "csyn native_sim UDP thread stack size"
+	depends on CSYN_NATIVE_UDP
+	default 2048
+	range 1024 8192
+
+config CSYN_NATIVE_UDP_THREAD_PRIORITY
+	int "csyn native_sim UDP thread priority"
+	depends on CSYN_NATIVE_UDP
+	default 6
+
+config CSYN_ZENOH
+	bool "Enable csyn Zenoh transport"
+	depends on NETWORKING && NET_UDP && POSIX_API
+	select ZENOH_PICO
+	select ZENOH_PICO_MULTI_THREAD
+	select ZENOH_PICO_PUBLICATION
+	select ZENOH_PICO_SUBSCRIPTION
+	select ZENOH_PICO_SCOUTING
+	select ZENOH_PICO_LINK_UDP_MULTICAST
+	select ZENOH_PICO_LINK_UDP_UNICAST
+	help
+	  Subscribe to inbound synapse topics over Zenoh and publish outbound
+	  topics over Zenoh. This is the flight transport for the
+	  Ethernet-only board path.
+
+config CSYN_ZENOH_MODE
+	string "csyn Zenoh mode"
+	depends on CSYN_ZENOH
+	default "client"
+
+config CSYN_ZENOH_LOCATOR
+	string "csyn Zenoh connect/listen locator"
+	depends on CSYN_ZENOH
+	default "udp/192.0.2.2:7447"
+
+config CSYN_ZENOH_RETRY_MS
+	int "csyn Zenoh reconnect period in milliseconds"
+	depends on CSYN_ZENOH
+	default 1000
+	range 100 10000
+
+config CSYN_ZENOH_THREAD_STACK_SIZE
+	int "csyn Zenoh thread stack size"
+	depends on CSYN_ZENOH
+	default 6144
+	range 2048 16384
+
+config CSYN_ZENOH_THREAD_PRIORITY
+	int "csyn Zenoh thread priority"
+	depends on CSYN_ZENOH
+	default 5
+
+endif

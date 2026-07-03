@@ -1,0 +1,72 @@
+# All jobs run on plain GitHub runners with no hardware: the Zephyr job
+# builds and runs twister on native_sim only (testcase.yaml keeps board
+# targets out of integration_platforms). The Zephyr and Rust jobs need the
+# pinned synapse_fbs release published (C tarball asset and crate) to go
+# green.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Rust formatting
+        run: cargo fmt --check --manifest-path rust/Cargo.toml
+      - name: C formatting
+        run: clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
+
+  rust:
+    name: Rust CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Lint
+        run: cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked --manifest-path rust/Cargo.toml
+
+  zephyr:
+    name: Zephyr module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: modules/lib/csyn
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install 32-bit host toolchain for native_sim
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+      - name: Set up Zephyr workspace
+        uses: zephyrproject-rtos/action-zephyr-setup@v1
+        with:
+          app-path: modules/lib/csyn
+          toolchains: x86_64-zephyr-elf
+      - name: Twister tests
+        working-directory: modules/lib/csyn
+        run: west twister -T zephyr/tests -v --inline-logs --integration
