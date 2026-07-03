@@ -113,15 +113,26 @@ static void publish_mocap_if_updated(struct csyn_topic *topic, uint32_t *last_ge
 {
 	uint8_t buf[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
 	size_t len = 0U;
+	static bool logged_decode_fail;
+	static bool logged_decode_ok;
 
 	if (topic == NULL || !copy_csyn_topic(topic, buf, sizeof(buf), &len, last_generation)) {
 		return;
 	}
 
 	if (!csyn_decode_mocap_frame(buf, len, &g_mocap)) {
+		if (!logged_decode_fail) {
+			LOG_WRN("mocap decode failed len=%u", (unsigned int)len);
+			logged_decode_fail = true;
+		}
 		return;
 	}
 
+	if (!logged_decode_ok) {
+		LOG_INF("mocap decoded valid=%d pos=[%.3f %.3f %.3f]", g_mocap.valid ? 1 : 0,
+			(double)g_mocap.x, (double)g_mocap.y, (double)g_mocap.z);
+		logged_decode_ok = true;
+	}
 	(void)zros_pub_update(&g_mocap_pub);
 }
 

@@ -6,6 +6,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 #include <zephyr/sys/util.h>
 
@@ -15,6 +16,14 @@ BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
 BUILD_ASSERT(sizeof(synapse_topic_PwmSignalOutputsData_t) == 48U);
 BUILD_ASSERT(sizeof(csyn_rc_channels16_t) == 64U);
 BUILD_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+
+static float read_f32_le(const uint8_t *buf, size_t index)
+{
+	float value;
+
+	memcpy(&value, &buf[index * sizeof(float)], sizeof(value));
+	return value;
+}
 
 void csyn_quatf_from_euler(float roll, float pitch, float yaw, synapse_types_Quaternionf_t *quat)
 {
@@ -61,6 +70,34 @@ bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, struct csyn_mo
 
 	if (buf == NULL || rb == NULL || buf_size < 8U) {
 		return false;
+	}
+
+	if (buf_size == 7U * sizeof(float)) {
+		float x = read_f32_le(buf, 0U);
+		float y = read_f32_le(buf, 1U);
+		float z = read_f32_le(buf, 2U);
+		float qw_raw = read_f32_le(buf, 3U);
+		float qx_raw = read_f32_le(buf, 4U);
+		float qy_raw = read_f32_le(buf, 5U);
+		float qz_raw = read_f32_le(buf, 6U);
+
+		if (!isfinite(x) || !isfinite(y) || !isfinite(z) || !isfinite(qw_raw) ||
+		    !isfinite(qx_raw) || !isfinite(qy_raw) || !isfinite(qz_raw)) {
+			return false;
+		}
+
+		*rb = (struct csyn_mocap_rigid_body){
+			.id = 0U,
+			.x = x,
+			.y = y,
+			.z = z,
+			.qw = -qy_raw,
+			.qx = -qz_raw,
+			.qy = qw_raw,
+			.qz = qx_raw,
+			.valid = true,
+		};
+		return true;
 	}
 
 	frame = synapse_topic_MocapFrame_as_root(buf);
