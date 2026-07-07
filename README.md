@@ -68,12 +68,8 @@ Bags are standard MCAP files whose schema records carry the embedded
 synapse_fbs binary schemas, so recordings are self-describing for any MCAP
 tool. The legacy `.csynbag` format is retired.
 
-Until synapse_fbs 0.3.0 is published to crates.io, build the CLI against a
-locally staged crate (`cargo run -- ci` in synapse_fbs stages it):
-
-```sh
-cargo build --config 'patch.crates-io.synapse_fbs.path="<synapse_fbs>/target/xtask/packages/rust"'
-```
+The CLI uses the published `synapse_fbs` crate matching the Zephyr module's
+pinned C release asset.
 
 ## Testing
 
