@@ -80,9 +80,29 @@ Formatting is enforced with the Zephyr `.clang-format` and rustfmt. Board
 targets may be added to `platform_allow` for optional local twister runs,
 but must stay out of `integration_platforms` so CI never needs hardware.
 
+The Nix flake provides host tools only; Zephyr and zros revisions still come
+from `west.yml`. Enter the development shell from the csyn repo root with:
+
 ```sh
-west twister -T zephyr/tests -p native_sim --inline-logs   # Zephyr module
-cd rust && cargo test                                      # host CLI
+nix develop
+```
+
+Or run the same checks CI runs without entering a shell:
+
+```sh
+nix develop -c cargo fmt --check --manifest-path rust/Cargo.toml
+nix develop -c clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
+nix develop -c cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+nix develop -c cargo test --locked --manifest-path rust/Cargo.toml
+nix develop -c west twister -T zephyr/tests -v --inline-logs --integration
+```
+
+For a fresh Zephyr workspace, keep csyn checked out at `modules/lib/csyn`,
+then initialize and update west from the workspace root:
+
+```sh
+nix develop ./modules/lib/csyn -c west init -l modules/lib/csyn
+nix develop ./modules/lib/csyn -c west update
 ```
 
 ## License

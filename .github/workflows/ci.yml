@@ -81,7 +81,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .west
             zephyr
             modules/lib/zros
           key: ${{ runner.os }}-west-${{ hashFiles('modules/lib/csyn/west.yml') }}
@@ -98,11 +97,8 @@ jobs:
             ${{ runner.os }}-twister-
       - name: Set up Zephyr workspace
         run: |
-          if [ ! -d .west ]; then
-            nix develop ./modules/lib/csyn -c west init -l modules/lib/csyn
-          else
-            nix develop ./modules/lib/csyn -c west config manifest.path modules/lib/csyn
-          fi
+          rm -rf .west
+          nix develop ./modules/lib/csyn -c west init -l modules/lib/csyn
           nix develop ./modules/lib/csyn -c west update
       - name: Twister tests
         working-directory: modules/lib/csyn
