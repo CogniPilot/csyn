@@ -101,7 +101,8 @@ For a fresh Zephyr workspace, keep csyn checked out at `modules/lib/csyn`,
 then initialize and update west from the workspace root:
 
 ```sh
-nix develop ./modules/lib/csyn -c west init -l modules/lib/csyn
+mkdir -p .west
+printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n' > .west/config
 nix develop ./modules/lib/csyn -c west update
 ```
 

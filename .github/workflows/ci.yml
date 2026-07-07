@@ -98,7 +98,8 @@ jobs:
       - name: Set up Zephyr workspace
         run: |
           rm -rf .west
-          nix develop ./modules/lib/csyn -c west init -l modules/lib/csyn
+          mkdir -p .west
+          printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n' > .west/config
           nix develop ./modules/lib/csyn -c west update
       - name: Twister tests
         working-directory: modules/lib/csyn
