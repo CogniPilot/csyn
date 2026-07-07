@@ -16,10 +16,10 @@ manifest:
   projects:
     - name: zephyr
       remote: cognipilot
-      revision: c908d12ebc2baa679d0f5b8e31eeb459ea93caff # matches cerebri_cubs2
+      revision: c908d12ebc2baa679d0f5b8e31eeb459ea93caff
       path: zephyr
       import: false
     - name: zros
       remote: cognipilot
-      revision: 959bce412d6e12b3a49fb8b55c219affcf7f6d0e # matches cerebri_cubs2
+      revision: 959bce412d6e12b3a49fb8b55c219affcf7f6d0e
       path: modules/lib/zros

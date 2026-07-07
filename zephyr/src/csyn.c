@@ -28,7 +28,9 @@ CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetrics
 
 #define CSYN_TOPIC(_suffix, _dir, _slots)                                                          \
 	{                                                                                          \
-		.key_suffix = _suffix, .dir = _dir, .slots = _slots,                               \
+		.key_suffix = _suffix,                                                             \
+		.dir = _dir,                                                                       \
+		.slots = _slots,                                                                   \
 		.max_size = sizeof(_slots) / 2U,                                                   \
 	}
 
