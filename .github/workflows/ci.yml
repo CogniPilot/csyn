@@ -114,5 +114,4 @@ jobs:
           printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
           nix develop ./modules/lib/csyn -c west update
       - name: Twister tests
-        working-directory: modules/lib/csyn
-        run: nix develop -c west twister -T zephyr/tests -v --inline-logs --integration
+        run: nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/scripts/twister -T modules/lib/csyn/zephyr/tests -v --inline-logs --integration

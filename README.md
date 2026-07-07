@@ -87,13 +87,26 @@ from `west.yml`. Enter the development shell from the csyn repo root with:
 nix develop
 ```
 
-Or run the same checks CI runs without entering a shell:
+Inside that shell, the normal host tools are available:
+
+```sh
+cargo test --locked --manifest-path rust/Cargo.toml
+clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
+west --version
+```
+
+You can also run host checks without entering a shell:
 
 ```sh
 nix develop -c cargo fmt --check --manifest-path rust/Cargo.toml
 nix develop -c clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
 nix develop -c cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 nix develop -c cargo test --locked --manifest-path rust/Cargo.toml
+```
+
+Run Twister from an existing west workspace with:
+
+```sh
 nix develop -c west twister -T zephyr/tests -v --inline-logs --integration
 ```
 
@@ -104,6 +117,7 @@ then initialize and update west from the workspace root:
 mkdir -p .west
 printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
 nix develop ./modules/lib/csyn -c west update
+nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/scripts/twister -T modules/lib/csyn/zephyr/tests -v --inline-logs --integration
 ```
 
 ## License
