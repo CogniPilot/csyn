@@ -9,8 +9,8 @@ include(FetchContent)
 # ids, keyexprs, payload layouts, and the generated topic printer for every
 # csyn consumer.
 FetchContent_Declare(synapse_fbs_c
-  URL https://github.com/CogniPilot/synapse_fbs/releases/download/v0.3.0/synapse_fbs-c.tar.gz
-  URL_HASH SHA256=4b00b8ef83c9f849059eb662d3f5acb93201a6c1fa17e6ecec2c9886bd1d5944
+  URL https://github.com/CogniPilot/synapse_fbs/releases/download/v0.3.3/synapse_fbs-c.tar.gz
+  URL_HASH SHA256=f7004a4d1df1c834923826553dcf543241c5236c9959554f7c4beabd8757c746
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(synapse_fbs_c)
