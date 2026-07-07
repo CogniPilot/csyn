@@ -79,7 +79,9 @@ config CSYN_NATIVE_UDP_THREAD_PRIORITY
 
 config CSYN_ZENOH
 	bool "Enable csyn Zenoh transport"
-	depends on NETWORKING && NET_UDP && POSIX_API
+	depends on NETWORKING || BOARD_NATIVE_SIM
+	depends on NET_UDP || BOARD_NATIVE_SIM
+	depends on POSIX_API || BOARD_NATIVE_SIM
 	select ZENOH_PICO
 	select ZENOH_PICO_MULTI_THREAD
 	select ZENOH_PICO_PUBLICATION
