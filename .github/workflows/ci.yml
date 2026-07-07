@@ -25,6 +25,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-gha-cache: true
+          use-flakehub: false
       - name: Check flake
         run: nix flake check
 
@@ -37,6 +40,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-gha-cache: true
+          use-flakehub: false
       - name: Rust formatting
         run: nix develop -c cargo fmt --check --manifest-path rust/Cargo.toml
       - name: C formatting
@@ -51,6 +57,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-gha-cache: true
+          use-flakehub: false
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -77,6 +86,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-gha-cache: true
+          use-flakehub: false
       - name: Cache west workspace
         uses: actions/cache@v4
         with:
@@ -99,7 +111,7 @@ jobs:
         run: |
           rm -rf .west
           mkdir -p .west
-          printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n' > .west/config
+          printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
           nix develop ./modules/lib/csyn -c west update
       - name: Twister tests
         working-directory: modules/lib/csyn
