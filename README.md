@@ -102,7 +102,7 @@ then initialize and update west from the workspace root:
 
 ```sh
 mkdir -p .west
-printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n' > .west/config
+printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
 nix develop ./modules/lib/csyn -c west update
 ```
 
