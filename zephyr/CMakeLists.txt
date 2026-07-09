@@ -8,9 +8,17 @@ include(FetchContent)
 # csyn owns the synapse_fbs schema contract: this pinned release fixes topic
 # ids, keyexprs, payload layouts, and the generated topic printer for every
 # csyn consumer.
+set(CSYN_SYNAPSE_FBS_C_URL
+  "https://github.com/CogniPilot/synapse_fbs/releases/download/v0.4.0/synapse_fbs-c.tar.gz"
+  CACHE STRING "URL for the generated synapse_fbs C archive"
+)
+set(CSYN_SYNAPSE_FBS_C_URL_HASH
+  "SHA256=06dea200cf3ce02008729e1b230f72cd929f5e69abdc267ded25277a11208d61"
+  CACHE STRING "CMake URL_HASH for the generated synapse_fbs C archive"
+)
 FetchContent_Declare(synapse_fbs_c
-  URL https://github.com/CogniPilot/synapse_fbs/releases/download/v0.3.3/synapse_fbs-c.tar.gz
-  URL_HASH SHA256=f7004a4d1df1c834923826553dcf543241c5236c9959554f7c4beabd8757c746
+  URL ${CSYN_SYNAPSE_FBS_C_URL}
+  URL_HASH ${CSYN_SYNAPSE_FBS_C_URL_HASH}
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(synapse_fbs_c)
