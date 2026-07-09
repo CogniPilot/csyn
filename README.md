@@ -124,11 +124,11 @@ nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/sc
 
 GitHub Actions publishes the Rust CLI crate to crates.io when a tag matching
 `vMAJOR.MINOR.PATCH` is pushed. The tag version must match
-`rust/Cargo.toml`, so a release for version `0.2.0` is:
+`rust/Cargo.toml`, so a release for version `0.3.0` is:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
