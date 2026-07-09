@@ -5,25 +5,14 @@
 #include <csyn/csyn_codec.h>
 
 #include <math.h>
-#include <stddef.h>
 #include <string.h>
 
 #include <zephyr/sys/util.h>
-
-#include <synapse/mocap_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
 BUILD_ASSERT(sizeof(synapse_topic_PwmSignalOutputsData_t) == 48U);
 BUILD_ASSERT(sizeof(csyn_rc_channels16_t) == 64U);
 BUILD_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
-
-static float read_f32_le(const uint8_t *buf, size_t index)
-{
-	float value;
-
-	memcpy(&value, &buf[index * sizeof(float)], sizeof(value));
-	return value;
-}
 
 void csyn_quatf_from_euler(float roll, float pitch, float yaw, synapse_types_Quaternionf_t *quat)
 {
@@ -58,75 +47,6 @@ void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll,
 	*roll = atan2f(sinr_cosp, cosr_cosp);
 	*pitch = asinf(csyn_clampf(sinp, -1.0f, 1.0f));
 	*yaw = atan2f(siny_cosp, cosy_cosp);
-}
-
-bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, struct csyn_mocap_rigid_body *rb)
-{
-	synapse_topic_MocapFrame_table_t frame;
-	synapse_topic_MocapRigidBodySample_vec_t bodies;
-	synapse_topic_MocapRigidBodySample_struct_t sample;
-	synapse_types_Vec3f_struct_t position;
-	synapse_types_Quaternionf_struct_t attitude;
-
-	if (buf == NULL || rb == NULL || buf_size < 8U) {
-		return false;
-	}
-
-	if (buf_size == 7U * sizeof(float)) {
-		float x = read_f32_le(buf, 0U);
-		float y = read_f32_le(buf, 1U);
-		float z = read_f32_le(buf, 2U);
-		float qw_raw = read_f32_le(buf, 3U);
-		float qx_raw = read_f32_le(buf, 4U);
-		float qy_raw = read_f32_le(buf, 5U);
-		float qz_raw = read_f32_le(buf, 6U);
-
-		if (!isfinite(x) || !isfinite(y) || !isfinite(z) || !isfinite(qw_raw) ||
-		    !isfinite(qx_raw) || !isfinite(qy_raw) || !isfinite(qz_raw)) {
-			return false;
-		}
-
-		*rb = (struct csyn_mocap_rigid_body){
-			.id = 0U,
-			.x = x,
-			.y = y,
-			.z = z,
-			.qw = -qy_raw,
-			.qx = -qz_raw,
-			.qy = qw_raw,
-			.qz = qx_raw,
-			.valid = true,
-		};
-		return true;
-	}
-
-	frame = synapse_topic_MocapFrame_as_root(buf);
-	if (frame == NULL) {
-		return false;
-	}
-
-	bodies = synapse_topic_MocapFrame_rigid_bodies(frame);
-	if (bodies == NULL || synapse_topic_MocapRigidBodySample_vec_len(bodies) == 0U) {
-		return false;
-	}
-
-	sample = synapse_topic_MocapRigidBodySample_vec_at(bodies, 0);
-	position = synapse_topic_MocapRigidBodySample_position_enu_m(sample);
-	attitude = synapse_topic_MocapRigidBodySample_attitude(sample);
-
-	*rb = (struct csyn_mocap_rigid_body){
-		.id = synapse_topic_MocapRigidBodySample_id(sample),
-		.x = position->x,
-		.y = position->y,
-		.z = position->z,
-		.qw = attitude->w,
-		.qx = attitude->x,
-		.qy = attitude->y,
-		.qz = attitude->z,
-		.valid = synapse_topic_MocapRigidBodySample_tracking_valid(sample) != 0U,
-	};
-
-	return true;
 }
 
 static float milli_to_axis(int16_t value, float min_value, float max_value)
