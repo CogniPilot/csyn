@@ -120,6 +120,22 @@ nix develop ./modules/lib/csyn -c west update
 nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/scripts/twister -T modules/lib/csyn/zephyr/tests -v --inline-logs --integration
 ```
 
+## Releases
+
+GitHub Actions publishes the Rust CLI crate to crates.io when a tag matching
+`vMAJOR.MINOR.PATCH` is pushed. The tag version must match
+`rust/Cargo.toml`, so a release for version `0.2.0` is:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
+and a `cargo publish --dry-run` before publishing. Configure the repository
+secret `CARGO_REGISTRY_TOKEN` with a crates.io token allowed to publish the
+`csyn` crate.
+
 ## License
 
 Apache-2.0

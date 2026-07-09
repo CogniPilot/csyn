@@ -4,6 +4,8 @@ version = "0.2.0"
 edition = "2024"
 description = "ROS-like Synapse CLI over Zenoh and FlatBuffers"
 license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/CogniPilot/csyn"
 
 [dependencies]
 anyhow = "1.0"
