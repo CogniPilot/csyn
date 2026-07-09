@@ -9,7 +9,10 @@
 
 #include <zephyr/sys/util.h>
 
+#include <synapse/state_reader.h>
+
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
+BUILD_ASSERT(sizeof(synapse_topic_ExternalOdometryData_t) == 64U);
 BUILD_ASSERT(sizeof(synapse_topic_PwmSignalOutputsData_t) == 48U);
 BUILD_ASSERT(sizeof(csyn_rc_channels16_t) == 64U);
 BUILD_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
