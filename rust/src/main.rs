@@ -153,9 +153,12 @@ fn topic_echo(
     let forced_type = ty.as_deref().map(TopicType::require).transpose()?;
 
     while !shutdown.load(Ordering::Relaxed) {
-        let sample = subscriber
-            .recv()
-            .map_err(|error| anyhow!("failed to receive sample: {error}"))?;
+        let Some(sample) = subscriber
+            .recv_timeout(Duration::from_millis(100))
+            .map_err(|error| anyhow!("failed to receive sample: {error}"))?
+        else {
+            continue;
+        };
         let key = sample.key_expr().to_string();
         let payload = sample.payload().to_bytes().to_vec();
         let known_type = forced_type.or_else(|| TopicType::infer(&key));
