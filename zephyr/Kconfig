@@ -16,7 +16,7 @@ config CSYN_FLATBUFFER_MAX_SIZE
 	range 64 4096
 	help
 	  Fixed-layout struct topics size their store slots from the catalog.
-	  Flatbuffer topics (e.g. mocap_frame) have variable size and use
+	  Flatbuffer topics have variable size and use
 	  this bound instead.
 
 config CSYN_ZROS_BRIDGE

@@ -49,7 +49,7 @@ Layout (everything for the module lives under `zephyr/`):
 - `zephyr/include/csyn/csyn_codec.h` — payload decode/encode plus PWM/axis
   and quaternion/euler helpers
 - `zephyr/include/csyn/csyn_types.h` — plain in-process types (rc channels,
-  mocap rigid body, manual control)
+  manual control)
 - `zephyr/include/csyn/csyn_zros.h` — zros topic declarations vehicles use
 - `zephyr/src/` — store, codec, bridge, shell, and transports
 - `zephyr/{module.yml,Kconfig,CMakeLists.txt}` — west integration and the
