@@ -42,15 +42,7 @@ jobs:
             exit 1
           fi
 
-          crate_version="$(
-            nix develop -c python - <<'PY'
-import tomllib
-from pathlib import Path
-
-data = tomllib.loads(Path("rust/Cargo.toml").read_text())
-print(data["package"]["version"])
-PY
-          )"
+          crate_version="$(nix develop -c python -c 'import tomllib; from pathlib import Path; data = tomllib.loads(Path("rust/Cargo.toml").read_text()); print(data["package"]["version"])')"
           tag_version="${tag#v}"
 
           if [[ "${crate_version}" != "${tag_version}" ]]; then
