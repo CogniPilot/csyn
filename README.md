@@ -132,9 +132,9 @@ git push origin v0.2.0
 ```
 
 The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
-and a `cargo publish --dry-run` before publishing. Configure the repository
-secret `CARGO_REGISTRY_TOKEN` with a crates.io token allowed to publish the
-`csyn` crate.
+and a `cargo publish --dry-run` before publishing. crates.io Trusted Publishing
+is configured for the `CogniPilot/csyn` repository and the `release.yml`
+workflow, so no repository publish secret is required.
 
 ## License
 
