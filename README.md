@@ -19,6 +19,10 @@ generated decoder. Every topic (name, keyexpr, payload type, encoding, catalog
 id) resolves from the generated catalog, so the wire contract is locked by csyn
 rather than per application and nothing is vendored.
 
+Check the compiled schema release with `csyn --version` or `csyn build-info`
+on the host. On the Zephyr shell, `csyn status` prints the pinned
+`synapse_fbs` release compiled into the module.
+
 ## Zephyr module
 
 Add csyn to your west manifest:

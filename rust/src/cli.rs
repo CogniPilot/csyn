@@ -1,20 +1,29 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "csyn",
-    version,
     about = "ROS-like Synapse CLI over Zenoh and FlatBuffers",
+    arg_required_else_help = true,
     next_line_help = true
 )]
 pub struct Cli {
     #[command(flatten)]
     pub zenoh: ZenohArgs,
 
+    #[arg(
+        short = 'V',
+        long = "version",
+        global = true,
+        action = ArgAction::SetTrue,
+        help = "Print csyn and schema build version information"
+    )]
+    pub version: bool,
+
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Args)]
@@ -31,6 +40,8 @@ pub struct ZenohArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Print csyn and schema build version information.
+    BuildInfo,
     /// Inspect and publish Synapse topics.
     #[command(subcommand)]
     Topic(TopicCommand),

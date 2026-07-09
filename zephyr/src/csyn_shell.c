@@ -4,6 +4,7 @@
 
 #include <csyn/csyn.h>
 #include <csyn/csyn_codec.h>
+#include <csyn/csyn_version.h>
 #include <synapse/topic_print.h>
 
 #include <errno.h>
@@ -422,6 +423,7 @@ static int cmd_csyn_status(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 
 	shell_print(sh, "csyn: enabled");
+	shell_print(sh, "synapse_fbs: %s", CSYN_SYNAPSE_FBS_VERSION);
 	shell_print(sh, "catalog: %u synapse topics, %u registered",
 		    (unsigned int)synapse_topics_count, (unsigned int)csyn_topic_count());
 #if defined(CONFIG_CSYN_NATIVE_UDP)
