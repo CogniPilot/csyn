@@ -30,7 +30,7 @@ ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_command, synapse_topic_AttitudeComma
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mission_progress, synapse_topic_MissionProgressData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(local_position_command, synapse_topic_LocalPositionCommandData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_command, synapse_topic_VehicleCommandData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_command, struct csyn_vehicle_command);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(navigation_target, synapse_topic_NavigationTargetData_t);
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic)
@@ -68,7 +68,7 @@ static synapse_topic_AttitudeCommandData_t g_att_cmd_msg;
 static synapse_topic_ControlLoopMetricsData_t g_metrics_msg;
 static synapse_topic_MissionProgressData_t g_mission_progress_msg;
 static synapse_topic_LocalPositionCommandData_t g_local_pos_cmd_msg;
-static synapse_topic_VehicleCommandData_t g_vehicle_cmd_msg;
+static struct csyn_vehicle_command g_vehicle_cmd_msg;
 static synapse_topic_NavigationTargetData_t g_nav_target_msg;
 
 static struct bridge_tx_map g_tx_maps[] = {

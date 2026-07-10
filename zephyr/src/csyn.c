@@ -3,6 +3,7 @@
  */
 
 #include <csyn/csyn.h>
+#include <csyn/csyn_types.h>
 
 #include <errno.h>
 #include <string.h>
@@ -28,7 +29,7 @@ CSYN_SLOTS(g_attitude_command_slots, sizeof(synapse_topic_AttitudeCommandData_t)
 CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetricsData_t));
 CSYN_SLOTS(g_mission_progress_slots, sizeof(synapse_topic_MissionProgressData_t));
 CSYN_SLOTS(g_local_position_command_slots, sizeof(synapse_topic_LocalPositionCommandData_t));
-CSYN_SLOTS(g_vehicle_command_slots, sizeof(synapse_topic_VehicleCommandData_t));
+CSYN_SLOTS(g_vehicle_command_slots, sizeof(struct csyn_vehicle_command));
 CSYN_SLOTS(g_navigation_target_slots, sizeof(synapse_topic_NavigationTargetData_t));
 
 #define CSYN_TOPIC(_suffix, _dir, _slots)                                                          \
@@ -162,6 +163,26 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic)
 	return (uint32_t)atomic_get((atomic_t *)&topic->generation);
 }
 
+/* synapse_fbs 0.3.3 catalog entry: VehicleCommand left the 0.5.0 schema for
+ * the queryable command protocol, but the electrode ground station still
+ * consumes this 40-byte broadcast on the old topic key.
+ */
+static const synapse_topic_info_t g_vehicle_command_info = {
+	.id = 22,
+	.name = "VehicleCommand",
+	.key = "synapse/v1/topic/vehicle_command",
+	.key_suffix = "vehicle_command",
+	.root_table = "VehicleCommand",
+	.payload_type = "VehicleCommandData",
+	.payload_size = sizeof(struct csyn_vehicle_command),
+	.schema_file = "fbs/control.fbs",
+	.fixed_layout = true,
+	.multi_instance = false,
+	.scope = "any",
+	.encoding = "struct",
+	.description = "Generic command with floating-point arguments.",
+};
+
 static int csyn_init(void)
 {
 	for (size_t i = 0U; i < ARRAY_SIZE(g_topics); i++) {
@@ -172,6 +193,11 @@ static int csyn_init(void)
 				topic->info = &synapse_topics[j];
 				break;
 			}
+		}
+
+		if (topic->info == NULL &&
+		    strcmp(topic->key_suffix, g_vehicle_command_info.key_suffix) == 0) {
+			topic->info = &g_vehicle_command_info;
 		}
 
 		if (topic->info == NULL) {

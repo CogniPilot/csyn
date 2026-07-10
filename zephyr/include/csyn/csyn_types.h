@@ -39,6 +39,26 @@ struct csyn_mocap_rigid_body {
 
 typedef struct csyn_mocap_rigid_body csyn_mocap_rigid_body_t;
 
+/* Wire-compatible with synapse_fbs 0.3.3 VehicleCommandData (removed in
+ * 0.5.0); the electrode ground station still decodes this 40-byte layout
+ * from the vehicle_command key.
+ */
+struct csyn_vehicle_command {
+	uint64_t timestamp_us;
+	float arg0;
+	float arg1;
+	float arg2;
+	float arg3;
+	float arg4;
+	float arg5;
+	float arg6;
+	uint16_t command_id;
+	uint8_t target_system;
+	uint8_t target_component;
+};
+
+typedef struct csyn_vehicle_command csyn_vehicle_command_t;
+
 struct csyn_manual_control {
 	csyn_rc_channels16_t rc;
 	bool valid;
