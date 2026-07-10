@@ -5,10 +5,12 @@
 #include <csyn/csyn_codec.h>
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <zephyr/sys/util.h>
 
+#include <synapse/mocap_reader.h>
 #include <synapse/state_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
@@ -50,6 +52,85 @@ void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll,
 	*roll = atan2f(sinr_cosp, cosr_cosp);
 	*pitch = asinf(csyn_clampf(sinp, -1.0f, 1.0f));
 	*yaw = atan2f(siny_cosp, cosy_cosp);
+}
+
+/*
+ * Compact per-rigid-body pose published by mocap bridges
+ * (synapse_qualisys_bridge and the electrode ground station) on
+ * `synapse/mocap/rigid_body/<name>/pose`: 7 little-endian f32 values
+ * [px, py, pz, qx, qy, qz, qw] — ENU metres, quaternion scalar (w) LAST.
+ */
+#define CSYN_MOCAP_COMPACT_POSE_SIZE (7U * sizeof(float))
+
+static bool csyn_decode_compact_pose(const uint8_t *buf, struct csyn_mocap_rigid_body *rb)
+{
+	float values[7];
+
+	memcpy(values, buf, sizeof(values));
+	for (size_t i = 0U; i < ARRAY_SIZE(values); i++) {
+		if (!isfinite(values[i])) {
+			return false;
+		}
+	}
+
+	*rb = (struct csyn_mocap_rigid_body){
+		.id = 0,
+		.x = values[0],
+		.y = values[1],
+		.z = values[2],
+		.qx = values[3],
+		.qy = values[4],
+		.qz = values[5],
+		.qw = values[6],
+		.valid = true,
+	};
+
+	return true;
+}
+
+bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, struct csyn_mocap_rigid_body *rb)
+{
+	synapse_topic_MocapFrame_table_t frame;
+	synapse_topic_MocapRigidBodySample_vec_t bodies;
+	synapse_topic_MocapRigidBodySample_struct_t sample;
+	synapse_types_Vec3f_struct_t position;
+	synapse_types_Quaternionf_struct_t attitude;
+
+	if (buf == NULL || rb == NULL || buf_size < 8U) {
+		return false;
+	}
+
+	if (buf_size == CSYN_MOCAP_COMPACT_POSE_SIZE) {
+		return csyn_decode_compact_pose(buf, rb);
+	}
+
+	frame = synapse_topic_MocapFrame_as_root(buf);
+	if (frame == NULL) {
+		return false;
+	}
+
+	bodies = synapse_topic_MocapFrame_rigid_bodies(frame);
+	if (bodies == NULL || synapse_topic_MocapRigidBodySample_vec_len(bodies) == 0U) {
+		return false;
+	}
+
+	sample = synapse_topic_MocapRigidBodySample_vec_at(bodies, 0);
+	position = synapse_topic_MocapRigidBodySample_position_enu_m(sample);
+	attitude = synapse_topic_MocapRigidBodySample_attitude(sample);
+
+	*rb = (struct csyn_mocap_rigid_body){
+		.id = synapse_topic_MocapRigidBodySample_id(sample),
+		.x = position->x,
+		.y = position->y,
+		.z = position->z,
+		.qw = attitude->w,
+		.qx = attitude->x,
+		.qy = attitude->y,
+		.qz = attitude->z,
+		.valid = synapse_topic_MocapRigidBodySample_tracking_valid(sample) != 0U,
+	};
+
+	return true;
 }
 
 static float milli_to_axis(int16_t value, float min_value, float max_value)

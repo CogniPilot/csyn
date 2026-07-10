@@ -21,12 +21,17 @@
 LOG_MODULE_REGISTER(csyn_zros, LOG_LEVEL_INF);
 
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(manual_control, struct csyn_manual_control);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mocap, struct csyn_mocap_rigid_body);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(external_odometry, synapse_topic_ExternalOdometryData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(pwm_signal_outputs, synapse_topic_PwmSignalOutputsData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_health, synapse_topic_VehicleHealthData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_command, synapse_topic_AttitudeCommandData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mission_progress, synapse_topic_MissionProgressData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(local_position_command, synapse_topic_LocalPositionCommandData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_command, synapse_topic_VehicleCommandData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(navigation_target, synapse_topic_NavigationTargetData_t);
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic)
 {
@@ -37,8 +42,10 @@ static K_THREAD_STACK_DEFINE(g_bridge_stack, 2048);
 static struct k_thread g_bridge_thread;
 static struct zros_node g_bridge_node;
 static struct zros_pub g_manual_control_pub;
+static struct zros_pub g_mocap_pub;
 static struct zros_pub g_external_odometry_pub;
 static struct csyn_manual_control g_manual_control;
+static struct csyn_mocap_rigid_body g_mocap;
 static synapse_topic_ExternalOdometryData_t g_external_odometry;
 
 /*
@@ -59,6 +66,10 @@ static synapse_topic_VehicleHealthData_t g_health_msg;
 static synapse_topic_AttitudeEstimateData_t g_att_est_msg;
 static synapse_topic_AttitudeCommandData_t g_att_cmd_msg;
 static synapse_topic_ControlLoopMetricsData_t g_metrics_msg;
+static synapse_topic_MissionProgressData_t g_mission_progress_msg;
+static synapse_topic_LocalPositionCommandData_t g_local_pos_cmd_msg;
+static synapse_topic_VehicleCommandData_t g_vehicle_cmd_msg;
+static synapse_topic_NavigationTargetData_t g_nav_target_msg;
 
 static struct bridge_tx_map g_tx_maps[] = {
 	{&topic_pwm_signal_outputs, "pwm_signal_outputs", &g_pwm_msg, sizeof(g_pwm_msg)},
@@ -67,6 +78,14 @@ static struct bridge_tx_map g_tx_maps[] = {
 	{&topic_attitude_command, "attitude_command", &g_att_cmd_msg, sizeof(g_att_cmd_msg)},
 	{&topic_control_loop_metrics, "control_loop_metrics", &g_metrics_msg,
 	 sizeof(g_metrics_msg)},
+	{&topic_mission_progress, "mission_progress", &g_mission_progress_msg,
+	 sizeof(g_mission_progress_msg)},
+	{&topic_local_position_command, "local_position_command", &g_local_pos_cmd_msg,
+	 sizeof(g_local_pos_cmd_msg)},
+	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg,
+	 sizeof(g_vehicle_cmd_msg)},
+	{&topic_navigation_target, "navigation_target", &g_nav_target_msg,
+	 sizeof(g_nav_target_msg)},
 };
 
 static bool copy_csyn_topic(struct csyn_topic *topic, uint8_t *buf, size_t buf_size, size_t *len,
@@ -107,6 +126,33 @@ static void publish_manual_control_if_updated(struct csyn_topic *topic, uint32_t
 		.stamp_ms = k_uptime_get(),
 	};
 	(void)zros_pub_update(&g_manual_control_pub);
+}
+
+static void publish_mocap_if_updated(struct csyn_topic *topic, uint32_t *last_generation)
+{
+	uint8_t buf[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
+	size_t len = 0U;
+	static bool logged_decode_fail;
+	static bool logged_decode_ok;
+
+	if (topic == NULL || !copy_csyn_topic(topic, buf, sizeof(buf), &len, last_generation)) {
+		return;
+	}
+
+	if (!csyn_decode_mocap_frame(buf, len, &g_mocap)) {
+		if (!logged_decode_fail) {
+			LOG_WRN("mocap decode failed len=%u", (unsigned int)len);
+			logged_decode_fail = true;
+		}
+		return;
+	}
+
+	if (!logged_decode_ok) {
+		LOG_INF("mocap decoded valid=%d pos=[%.3f %.3f %.3f]", g_mocap.valid ? 1 : 0,
+			(double)g_mocap.x, (double)g_mocap.y, (double)g_mocap.z);
+		logged_decode_ok = true;
+	}
+	(void)zros_pub_update(&g_mocap_pub);
 }
 
 static void publish_external_odometry_if_updated(struct csyn_topic *topic,
@@ -159,8 +205,10 @@ static void mirror_tx_if_updated(struct bridge_tx_map *map)
 static void bridge_thread(void *arg0, void *arg1, void *arg2)
 {
 	struct csyn_topic *manual_topic = csyn_topic_find("manual_control_command");
+	struct csyn_topic *mocap_topic = csyn_topic_find("mocap_frame");
 	struct csyn_topic *external_odometry_topic = csyn_topic_find("external_odometry");
 	uint32_t last_manual_generation = 0U;
+	uint32_t last_mocap_generation = 0U;
 	uint32_t last_external_odometry_generation = 0U;
 
 	ARG_UNUSED(arg0);
@@ -169,6 +217,7 @@ static void bridge_thread(void *arg0, void *arg1, void *arg2)
 
 	while (true) {
 		publish_manual_control_if_updated(manual_topic, &last_manual_generation);
+		publish_mocap_if_updated(mocap_topic, &last_mocap_generation);
 		publish_external_odometry_if_updated(external_odometry_topic,
 						     &last_external_odometry_generation);
 		for (size_t i = 0U; i < ARRAY_SIZE(g_tx_maps); i++) {
@@ -194,6 +243,11 @@ static int bridge_init(void)
 
 	rc = zros_pub_init(&g_manual_control_pub, &g_bridge_node, &topic_manual_control,
 			   &g_manual_control);
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = zros_pub_init(&g_mocap_pub, &g_bridge_node, &topic_mocap, &g_mocap);
 	if (rc != 0) {
 		return rc;
 	}

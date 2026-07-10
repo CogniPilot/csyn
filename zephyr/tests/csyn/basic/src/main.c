@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <math.h>
 #include <string.h>
 
 #include <zephyr/ztest.h>
@@ -113,6 +114,40 @@ ZTEST(csyn_codec, test_quat_euler_roundtrip)
 	zassert_within(quat.x, 0.0f, 1e-6f);
 	zassert_within(quat.y, 0.0f, 1e-6f);
 	zassert_within(quat.z, 0.0f, 1e-6f);
+}
+
+/*
+ * The compact mocap pose published by synapse_qualisys_bridge (and the
+ * electrode ground station) is 7 little-endian f32 values
+ * [px, py, pz, qx, qy, qz, qw] — quaternion scalar LAST on the wire.
+ */
+ZTEST(csyn_codec, test_decode_compact_mocap_pose)
+{
+	const float wire[7] = {1.5f, -2.25f, 0.75f, 0.1f, -0.2f, 0.55f, 0.8f};
+	uint8_t buf[sizeof(wire)];
+	struct csyn_mocap_rigid_body rb;
+
+	memcpy(buf, wire, sizeof(wire));
+	zassert_true(csyn_decode_mocap_frame(buf, sizeof(buf), &rb));
+	zassert_true(rb.valid);
+	zassert_within(rb.x, 1.5f, 1e-6f);
+	zassert_within(rb.y, -2.25f, 1e-6f);
+	zassert_within(rb.z, 0.75f, 1e-6f);
+	zassert_within(rb.qx, 0.1f, 1e-6f);
+	zassert_within(rb.qy, -0.2f, 1e-6f);
+	zassert_within(rb.qz, 0.55f, 1e-6f);
+	zassert_within(rb.qw, 0.8f, 1e-6f);
+}
+
+ZTEST(csyn_codec, test_decode_compact_mocap_pose_rejects_non_finite)
+{
+	float wire[7] = {1.5f, -2.25f, 0.75f, 0.1f, -0.2f, 0.55f, 0.8f};
+	uint8_t buf[sizeof(wire)];
+	struct csyn_mocap_rigid_body rb;
+
+	wire[6] = NAN;
+	memcpy(buf, wire, sizeof(wire));
+	zassert_false(csyn_decode_mocap_frame(buf, sizeof(buf), &rb));
 }
 
 ZTEST_SUITE(csyn_store, NULL, NULL, NULL, NULL, NULL);

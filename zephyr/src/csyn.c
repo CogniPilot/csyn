@@ -19,12 +19,17 @@ LOG_MODULE_REGISTER(csyn, LOG_LEVEL_INF);
 #define CSYN_SLOTS(_sym, _size) static uint8_t _sym[2U * (_size)]
 
 CSYN_SLOTS(g_manual_control_slots, sizeof(synapse_topic_ManualControlData_t));
+CSYN_SLOTS(g_mocap_frame_slots, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
 CSYN_SLOTS(g_external_odometry_slots, sizeof(synapse_topic_ExternalOdometryData_t));
 CSYN_SLOTS(g_pwm_signal_outputs_slots, sizeof(synapse_topic_PwmSignalOutputsData_t));
 CSYN_SLOTS(g_vehicle_health_slots, sizeof(synapse_topic_VehicleHealthData_t));
 CSYN_SLOTS(g_attitude_estimate_slots, sizeof(synapse_topic_AttitudeEstimateData_t));
 CSYN_SLOTS(g_attitude_command_slots, sizeof(synapse_topic_AttitudeCommandData_t));
 CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetricsData_t));
+CSYN_SLOTS(g_mission_progress_slots, sizeof(synapse_topic_MissionProgressData_t));
+CSYN_SLOTS(g_local_position_command_slots, sizeof(synapse_topic_LocalPositionCommandData_t));
+CSYN_SLOTS(g_vehicle_command_slots, sizeof(synapse_topic_VehicleCommandData_t));
+CSYN_SLOTS(g_navigation_target_slots, sizeof(synapse_topic_NavigationTargetData_t));
 
 #define CSYN_TOPIC(_suffix, _dir, _slots)                                                          \
 	{                                                                                          \
@@ -36,12 +41,17 @@ CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetrics
 
 static struct csyn_topic g_topics[] = {
 	CSYN_TOPIC("manual_control_command", CSYN_DIR_RX, g_manual_control_slots),
+	CSYN_TOPIC("mocap_frame", CSYN_DIR_RX, g_mocap_frame_slots),
 	CSYN_TOPIC("external_odometry", CSYN_DIR_RX, g_external_odometry_slots),
 	CSYN_TOPIC("pwm_signal_outputs", CSYN_DIR_TX, g_pwm_signal_outputs_slots),
 	CSYN_TOPIC("vehicle_health", CSYN_DIR_TX, g_vehicle_health_slots),
 	CSYN_TOPIC("attitude_estimate", CSYN_DIR_TX, g_attitude_estimate_slots),
 	CSYN_TOPIC("attitude_command", CSYN_DIR_TX, g_attitude_command_slots),
 	CSYN_TOPIC("control_loop_metrics", CSYN_DIR_TX, g_control_loop_metrics_slots),
+	CSYN_TOPIC("mission_progress", CSYN_DIR_TX, g_mission_progress_slots),
+	CSYN_TOPIC("local_position_command", CSYN_DIR_TX, g_local_position_command_slots),
+	CSYN_TOPIC("vehicle_command", CSYN_DIR_TX, g_vehicle_command_slots),
+	CSYN_TOPIC("navigation_target", CSYN_DIR_TX, g_navigation_target_slots),
 };
 
 size_t csyn_topic_count(void)

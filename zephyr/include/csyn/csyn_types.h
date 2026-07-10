@@ -25,6 +25,20 @@ struct csyn_rc_channels16 {
 
 typedef struct csyn_rc_channels16 csyn_rc_channels16_t;
 
+struct csyn_mocap_rigid_body {
+	int32_t id;
+	float x;
+	float y;
+	float z;
+	float qw;
+	float qx;
+	float qy;
+	float qz;
+	bool valid;
+};
+
+typedef struct csyn_mocap_rigid_body csyn_mocap_rigid_body_t;
+
 struct csyn_manual_control {
 	csyn_rc_channels16_t rc;
 	bool valid;
