@@ -163,12 +163,13 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic)
 	return (uint32_t)atomic_get((atomic_t *)&topic->generation);
 }
 
-/* synapse_fbs 0.3.3 catalog entry: VehicleCommand left the 0.5.0 schema for
+/* synapse_fbs 0.3.3 catalog entry: VehicleCommand left the 0.5.x schema for
  * the queryable command protocol, but the electrode ground station still
- * consumes this 40-byte broadcast on the old topic key.
+ * consumes this 40-byte broadcast on the old topic key. The id sits above
+ * the generated catalog range (0.3.3 used 22, which 0.5.x reassigned).
  */
 static const synapse_topic_info_t g_vehicle_command_info = {
-	.id = 22,
+	.id = 65001,
 	.name = "VehicleCommand",
 	.key = "synapse/v1/topic/vehicle_command",
 	.key_suffix = "vehicle_command",

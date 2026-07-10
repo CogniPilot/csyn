@@ -139,7 +139,7 @@ static void publish_mocap_if_updated(struct csyn_topic *topic, uint32_t *last_ge
 		return;
 	}
 
-	if (!csyn_decode_mocap_frame(buf, len, &g_mocap)) {
+	if (!csyn_decode_mocap_frame(buf, len, CONFIG_CSYN_MOCAP_RIGID_BODY_ID, &g_mocap)) {
 		if (!logged_decode_fail) {
 			LOG_WRN("mocap decode failed len=%u", (unsigned int)len);
 			logged_decode_fail = true;
@@ -184,6 +184,26 @@ static void publish_external_odometry_if_updated(struct csyn_topic *topic,
 		logged_ok = true;
 	}
 	(void)zros_pub_update(&g_external_odometry_pub);
+
+	if (IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY)) {
+		const uint32_t pose_valid = synapse_topic_ExternalOdometryFlags_PositionValid |
+					    synapse_topic_ExternalOdometryFlags_AttitudeValid;
+		uint32_t flags = g_external_odometry.flags;
+
+		g_mocap = (struct csyn_mocap_rigid_body){
+			.id = g_external_odometry.id,
+			.x = g_external_odometry.position_enu_m.x,
+			.y = g_external_odometry.position_enu_m.y,
+			.z = g_external_odometry.position_enu_m.z,
+			.qw = g_external_odometry.attitude.w,
+			.qx = g_external_odometry.attitude.x,
+			.qy = g_external_odometry.attitude.y,
+			.qz = g_external_odometry.attitude.z,
+			.valid = (flags & pose_valid) == pose_valid &&
+				 (flags & synapse_topic_ExternalOdometryFlags_Lost) == 0U,
+		};
+		(void)zros_pub_update(&g_mocap_pub);
+	}
 }
 
 static void mirror_tx_if_updated(struct bridge_tx_map *map)

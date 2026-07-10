@@ -128,7 +128,7 @@ ZTEST(csyn_codec, test_decode_compact_mocap_pose)
 	struct csyn_mocap_rigid_body rb;
 
 	memcpy(buf, wire, sizeof(wire));
-	zassert_true(csyn_decode_mocap_frame(buf, sizeof(buf), &rb));
+	zassert_true(csyn_decode_mocap_frame(buf, sizeof(buf), 0, &rb));
 	zassert_true(rb.valid);
 	zassert_within(rb.x, 1.5f, 1e-6f);
 	zassert_within(rb.y, -2.25f, 1e-6f);
@@ -147,7 +147,7 @@ ZTEST(csyn_codec, test_decode_compact_mocap_pose_rejects_non_finite)
 
 	wire[6] = NAN;
 	memcpy(buf, wire, sizeof(wire));
-	zassert_false(csyn_decode_mocap_frame(buf, sizeof(buf), &rb));
+	zassert_false(csyn_decode_mocap_frame(buf, sizeof(buf), 0, &rb));
 }
 
 ZTEST_SUITE(csyn_store, NULL, NULL, NULL, NULL, NULL);

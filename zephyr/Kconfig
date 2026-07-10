@@ -104,6 +104,46 @@ config CSYN_ZENOH_LOCATOR
 	depends on CSYN_ZENOH
 	default "udp/192.0.2.2:7447"
 
+choice CSYN_MOCAP_SOURCE
+	prompt "Stream feeding the zros mocap topic"
+	default CSYN_MOCAP_SOURCE_FRAME
+	depends on CSYN_ZROS_BRIDGE
+
+config CSYN_MOCAP_SOURCE_FRAME
+	bool "mocap_frame rigid bodies"
+	help
+	  Decode the selected rigid body from synapse.topic.MocapFrame
+	  payloads: raw measurements, closest to the direct pose stream the
+	  controller was tuned against. Accepts both the FlatBuffers table
+	  published by synapse_qualisys_bridge >= 0.3.0 and the legacy
+	  28-byte compact pose.
+
+config CSYN_MOCAP_SOURCE_POSE_KEY
+	bool "direct compact pose key"
+	help
+	  Only the CSYN_ZENOH_MOCAP_POSE_KEY subscription feeds the mocap
+	  topic (legacy per-body compact pose stream, e.g. the electrode
+	  ground station republisher).
+
+config CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY
+	bool "external_odometry estimator output"
+	help
+	  Derive the mocap pose from ExternalOdometryData payloads; set
+	  CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY to the bridge's per-body stream.
+	  The bridge estimator extrapolates through tracking gaps, so
+	  consumers tuned for raw poses will not see repeated/held samples
+	  during dropouts.
+
+endchoice
+
+config CSYN_MOCAP_RIGID_BODY_ID
+	int "Rigid-body id selected from mocap_frame payloads"
+	depends on CSYN_ZROS_BRIDGE
+	default 0
+	help
+	  QTM 6D rigid-body ids are 1-based; 0 selects the first body in
+	  each frame.
+
 config CSYN_ZENOH_MOCAP_POSE_KEY
 	string "Zenoh key of a raw pose stream fed into the mocap_frame topic"
 	depends on CSYN_ZENOH
@@ -113,6 +153,15 @@ config CSYN_ZENOH_MOCAP_SELECTED_HOLD_SAMPLES
 	int "Fallback mocap samples suppressed after each fresh selected/ pose"
 	depends on CSYN_ZENOH
 	default 48
+
+config CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY
+	string "Zenoh key of a per-body ExternalOdometryData stream"
+	depends on CSYN_ZENOH
+	default ""
+	help
+	  e.g. synapse/v1/topic/external_odometry/1. Subscribing activates
+	  the bridge's demand-driven per-body publisher, so leave empty
+	  unless CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY consumes it.
 
 config CSYN_ZENOH_RETRY_MS
 	int "csyn Zenoh reconnect period in milliseconds"

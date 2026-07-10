@@ -193,6 +193,14 @@ static int open_session(z_owned_session_t *session)
 			continue;
 		}
 
+		/* The frame stream is high-rate; only pull it off the network
+		 * when it is the selected mocap source.
+		 */
+		if (!IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_FRAME) &&
+		    strcmp(topic->key_suffix, "mocap_frame") == 0) {
+			continue;
+		}
+
 		rc = declare_rx_subscriber(z_loan(*session), topic);
 		if (rc < 0) {
 			z_drop(z_move(*session));
@@ -203,7 +211,8 @@ static int open_session(z_owned_session_t *session)
 	/* Direct mocap feed: subscribe a raw pose stream into the mocap_frame
 	 * topic without any ground-side republisher in the path.
 	 */
-	if (CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY[0] != '\0') {
+	if (IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_POSE_KEY) &&
+	    CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY[0] != '\0') {
 		struct csyn_topic *mocap = csyn_topic_find("mocap_frame");
 
 		if (mocap != NULL) {
@@ -214,6 +223,25 @@ static int open_session(z_owned_session_t *session)
 				return rc;
 			}
 			LOG_INF("csyn zenoh mocap key %s", CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY);
+		}
+	}
+
+	/* Per-body estimator stream; subscribing also switches on the bridge's
+	 * demand-driven publisher for that body.
+	 */
+	if (CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY[0] != '\0') {
+		struct csyn_topic *odometry = csyn_topic_find("external_odometry");
+
+		if (odometry != NULL) {
+			rc = declare_rx_key_subscriber(
+				z_loan(*session), CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY,
+				odometry);
+			if (rc < 0) {
+				z_drop(z_move(*session));
+				return rc;
+			}
+			LOG_INF("csyn zenoh external odometry key %s",
+				CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY);
 		}
 	}
 
