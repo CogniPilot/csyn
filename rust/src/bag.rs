@@ -9,6 +9,8 @@ use mcap::records::MessageHeader;
 
 use crate::types::{SCHEMA_ENCODING_FLATBUFFER, TopicType};
 
+pub const VALUE_CONTRACT_METADATA_KEY: &str = "synapse.value_contract";
+
 /// Writes Synapse samples to an MCAP file. Each topic becomes a channel;
 /// schema records carry the wire type name and the embedded binary schema
 /// from the pinned synapse_fbs release, so bags are self-describing.
@@ -37,30 +39,31 @@ impl BagWriter {
     pub fn write_sample(
         &mut self,
         key: &str,
-        known_type: Option<TopicType>,
+        known_type: TopicType,
         log_time_ns: u64,
         payload: &[u8],
     ) -> Result<()> {
         let channel_id = match self.channels.get(key) {
             Some(&channel_id) => channel_id,
             None => {
-                let (schema_id, message_encoding) = match known_type {
-                    Some(known) => {
-                        let wire_type = known
-                            .wire_type()
-                            .ok_or_else(|| anyhow!("{} has no wire type", known.topic.name))?;
-                        let schema_id = self.writer.add_schema(
-                            wire_type,
-                            SCHEMA_ENCODING_FLATBUFFER,
-                            known.schema.bfbs,
-                        )?;
-                        (schema_id, known.message_encoding())
-                    }
-                    None => (0, ""),
-                };
-                let channel_id =
-                    self.writer
-                        .add_channel(schema_id, key, message_encoding, &BTreeMap::new())?;
+                let wire_type = known_type
+                    .wire_type()
+                    .ok_or_else(|| anyhow!("{} has no wire type", known_type.topic.name))?;
+                let schema_id = self.writer.add_schema(
+                    wire_type,
+                    SCHEMA_ENCODING_FLATBUFFER,
+                    known_type.schema.bfbs,
+                )?;
+                let metadata = BTreeMap::from([(
+                    VALUE_CONTRACT_METADATA_KEY.to_string(),
+                    known_type.zenoh_encoding().to_string(),
+                )]);
+                let channel_id = self.writer.add_channel(
+                    schema_id,
+                    key,
+                    known_type.message_encoding(),
+                    &metadata,
+                )?;
                 self.channels.insert(key.to_string(), channel_id);
                 channel_id
             }
@@ -113,32 +116,33 @@ mod tests {
         {
             let mut writer = BagWriter::create(&path, "csyn test").unwrap();
             writer
-                .write_sample(known.topic.key, Some(known), 1_000, &payload)
+                .write_sample(known.topic.key, known, 1_000, &payload)
                 .unwrap();
             writer
-                .write_sample(known.topic.key, Some(known), 2_000, &payload)
-                .unwrap();
-            writer
-                .write_sample("raw/key", None, 3_000, &[1, 2, 3])
+                .write_sample(known.topic.key, known, 2_000, &payload)
                 .unwrap();
             writer.finish().unwrap();
         }
 
         let contents = read_bag(&path).unwrap();
         let summary = mcap::read::Summary::read(&contents).unwrap().unwrap();
-        assert_eq!(summary.channels.len(), 2);
+        assert_eq!(summary.channels.len(), 1);
         assert_eq!(summary.schemas.len(), 1);
         let stats = summary.stats.unwrap();
-        assert_eq!(stats.message_count, 3);
+        assert_eq!(stats.message_count, 2);
 
         let messages: Vec<_> = mcap::MessageStream::new(&contents)
             .unwrap()
             .collect::<mcap::McapResult<_>>()
             .unwrap();
-        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 2);
         let schema = messages[0].channel.schema.as_ref().unwrap();
         assert_eq!(schema.name, "synapse.topic.VehicleHealthData");
         assert_eq!(schema.data.as_ref(), known.schema.bfbs);
+        assert_eq!(
+            messages[0].channel.metadata[VALUE_CONTRACT_METADATA_KEY],
+            known.zenoh_encoding().to_string()
+        );
 
         let _ = std::fs::remove_file(path);
     }

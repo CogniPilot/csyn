@@ -55,7 +55,7 @@ static void csyn_topic_dynamic_get(size_t idx, struct shell_static_entry *entry)
 		return;
 	}
 
-	entry->syntax = topic->key_suffix;
+	entry->syntax = topic->key;
 	entry->handler = NULL;
 	entry->subcmd = NULL;
 	entry->help = NULL;
@@ -117,7 +117,7 @@ static void csyn_topic_print(const struct shell *sh, const struct csyn_topic *to
 		return;
 	}
 
-	if (strcmp(topic->key_suffix, "mocap_frame") == 0) {
+	if (strcmp(topic->key, "mocap") == 0) {
 		print_mocap(sh, buf, len);
 		return;
 	}
@@ -131,7 +131,7 @@ static void csyn_topic_line_once(const struct shell *sh, struct csyn_topic *topi
 	char rendered[256];
 	size_t len = 0U;
 	uint32_t generation = 0U;
-	const char *suffix = topic->key_suffix;
+	const char *suffix = topic->key;
 
 	if (!csyn_topic_copy(topic, g_csyn_shell_buf, sizeof(g_csyn_shell_buf), &len,
 			     &generation)) {
@@ -145,7 +145,7 @@ static void csyn_topic_line_once(const struct shell *sh, struct csyn_topic *topi
 				  len) >= 0) {
 		(void)snprintk(line, sizeof(line), "%s gen=%u %s", suffix, (unsigned int)generation,
 			       rendered);
-	} else if (strcmp(suffix, "mocap_frame") == 0) {
+	} else if (strcmp(suffix, "mocap") == 0) {
 		csyn_mocap_rigid_body_t rb;
 
 		if (csyn_decode_mocap_frame(g_csyn_shell_buf, len, &rb)) {
@@ -160,9 +160,9 @@ static void csyn_topic_line_once(const struct shell *sh, struct csyn_topic *topi
 				       (unsigned int)generation, (unsigned int)len);
 		}
 	} else {
-		(void)snprintk(line, sizeof(line), "%s gen=%u len=%u key=%s", suffix,
+		(void)snprintk(line, sizeof(line), "%s gen=%u len=%u name=%s", suffix,
 			       (unsigned int)generation, (unsigned int)len,
-			       topic->info != NULL ? topic->info->key : "?");
+			       topic->info != NULL ? topic->info->name : "?");
 	}
 
 	shell_fprintf(sh, SHELL_NORMAL, "\r%-255s", line);
@@ -175,14 +175,13 @@ static int csyn_topic_echo_once(const struct shell *sh, struct csyn_topic *topic
 
 	if (!csyn_topic_copy(topic, g_csyn_shell_buf, sizeof(g_csyn_shell_buf), &len,
 			     &generation)) {
-		shell_print(sh, "%s: no samples", topic->key_suffix);
+		shell_print(sh, "%s: no samples", topic->key);
 		return 0;
 	}
 
-	shell_print(sh, "%s gen=%u len=%u type=%s key=%s", topic->key_suffix,
-		    (unsigned int)generation, (unsigned int)len,
-		    topic->info != NULL ? topic->info->payload_type : "?",
-		    topic->info != NULL ? topic->info->key : "?");
+	shell_print(sh, "%s gen=%u len=%u type=%s name=%s", topic->key, (unsigned int)generation,
+		    (unsigned int)len, topic->info != NULL ? topic->info->payload_type : "?",
+		    topic->info != NULL ? topic->info->name : "?");
 	csyn_topic_print(sh, topic, g_csyn_shell_buf, len);
 
 	return 0;
@@ -272,7 +271,7 @@ static void csyn_watch_thread(void *p0, void *p1, void *p2)
 				}
 
 				shell_print(watch.sh, "%s: %u samples in %lld ms = %0.2f Hz",
-					    watch.topic->key_suffix,
+					    watch.topic->key,
 					    (unsigned int)(generation_now - watch.last_generation),
 					    (long long)(now_ms - watch.last_ms),
 					    ((double)(generation_now - watch.last_generation) *
@@ -300,8 +299,17 @@ static void csyn_watch_thread(void *p0, void *p1, void *p2)
 
 static int cmd_csyn_topic_list(const struct shell *sh, size_t argc, char **argv)
 {
-	const bool show_live_only = (argc >= 2U) && (strcmp(argv[1], "live") == 0);
+	bool show_live_only = false;
+	const char *filter = NULL;
 	size_t shown = 0U;
+
+	for (size_t i = 1U; i < argc; i++) {
+		if (strcmp(argv[i], "live") == 0) {
+			show_live_only = true;
+		} else {
+			filter = argv[i];
+		}
+	}
 
 	for (size_t i = 0U; i < csyn_topic_count(); i++) {
 		struct csyn_topic *topic = csyn_topic_at(i);
@@ -314,17 +322,22 @@ static int cmd_csyn_topic_list(const struct shell *sh, size_t argc, char **argv)
 			continue;
 		}
 
-		shell_print(sh, "%-24s %-10s %-2s %-5s gen=%u len=%u max=%u key=%s",
-			    topic->key_suffix, topic->info != NULL ? topic->info->encoding : "?",
+		if (filter != NULL && strstr(topic->key, filter) == NULL &&
+		    (topic->info == NULL || strstr(topic->info->name, filter) == NULL)) {
+			continue;
+		}
+
+		shell_print(sh, "%-24s %-10s %-2s %-5s gen=%u len=%u max=%u name=%s", topic->key,
+			    topic->info != NULL ? topic->info->encoding : "?",
 			    topic->dir == CSYN_DIR_RX ? "rx" : "tx", available ? "live" : "empty",
 			    (unsigned int)generation, (unsigned int)len,
 			    (unsigned int)topic->max_size,
-			    topic->info != NULL ? topic->info->key : "?");
+			    topic->info != NULL ? topic->info->name : "?");
 		shown++;
 	}
 
 	if (shown == 0U) {
-		shell_print(sh, "no csyn topics have samples");
+		shell_print(sh, "no csyn topics match");
 	}
 
 	return 0;
@@ -341,13 +354,13 @@ static int cmd_csyn_topic_info(const struct shell *sh, size_t argc, char **argv)
 		return -ENOENT;
 	}
 
-	shell_print(sh, "name=%s", topic->key_suffix);
+	shell_print(sh, "key=%s", topic->key);
 	shell_print(sh, "dir=%s", topic->dir == CSYN_DIR_RX ? "rx" : "tx");
 	shell_print(sh, "max_size=%u", (unsigned int)topic->max_size);
 	shell_print(sh, "generation=%u", (unsigned int)csyn_topic_generation(topic));
 	if (topic->info != NULL) {
+		shell_print(sh, "name=%s", topic->info->name);
 		shell_print(sh, "catalog_id=%u", (unsigned int)topic->info->id);
-		shell_print(sh, "keyexpr=%s", topic->info->key);
 		shell_print(sh, "type=%s", topic->info->payload_type);
 		shell_print(sh, "encoding=%s", topic->info->encoding);
 		shell_print(sh, "schema=%s", topic->info->schema_file);
@@ -381,7 +394,7 @@ static int cmd_csyn_topic_echo(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_ECHO, period_ms);
-	shell_print(sh, "echoing %s every %u ms; use 'csyn topic stop' to stop", topic->key_suffix,
+	shell_print(sh, "echoing %s every %u ms; use 'csyn topic stop' to stop", topic->key,
 		    (unsigned int)period_ms);
 
 	return 0;
@@ -407,8 +420,8 @@ static int cmd_csyn_topic_hz(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_HZ, period_ms);
-	shell_print(sh, "measuring %s every %u ms; use 'csyn topic stop' to stop",
-		    topic->key_suffix, (unsigned int)period_ms);
+	shell_print(sh, "measuring %s every %u ms; use 'csyn topic stop' to stop", topic->key,
+		    (unsigned int)period_ms);
 
 	return 0;
 }
@@ -433,7 +446,7 @@ static int cmd_csyn_topic_watch(const struct shell *sh, size_t argc, char **argv
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_LINE, period_ms);
-	shell_print(sh, "watching %s every %u ms; use 'csyn topic stop' to stop", topic->key_suffix,
+	shell_print(sh, "watching %s every %u ms; use 'csyn topic stop' to stop", topic->key,
 		    (unsigned int)period_ms);
 
 	return 0;
@@ -475,8 +488,9 @@ static int cmd_csyn_status(const struct shell *sh, size_t argc, char **argv)
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_csyn_topic,
 	SHELL_CMD_ARG(list, NULL,
-		      "list configured topics and live state; use 'list live' for samples only",
-		      cmd_csyn_topic_list, 1, 1),
+		      "list configured topics: csyn topic list [live] [filter]; 'live' shows "
+		      "topics with samples only, filter matches key or name substrings",
+		      cmd_csyn_topic_list, 1, 2),
 	SHELL_CMD_ARG(info, &sub_csyn_topic_names, "show topic info: csyn topic info <name>",
 		      cmd_csyn_topic_info, 2, 0),
 	SHELL_CMD_ARG(echo, &sub_csyn_topic_names,

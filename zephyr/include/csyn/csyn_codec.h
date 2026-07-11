@@ -47,6 +47,9 @@ void csyn_quatf_from_euler(float roll, float pitch, float yaw, synapse_types_Qua
 void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll, float *pitch,
 			   float *yaw);
 
+void csyn_quatf_from_rotation(const synapse_types_RotationMatrix3f_t *rotation,
+			      synapse_types_Quaternionf_t *quat);
+
 bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, struct csyn_mocap_rigid_body *rb);
 
 bool csyn_decode_manual_control(const void *buf, size_t buf_size, csyn_rc_channels16_t *rc,

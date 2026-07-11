@@ -9,8 +9,8 @@ include(FetchContent)
 # ids, keyexprs, payload layouts, and the generated topic printer for every
 # csyn consumer.
 FetchContent_Declare(synapse_fbs_c
-  URL https://github.com/CogniPilot/synapse_fbs/releases/download/v0.3.3/synapse_fbs-c.tar.gz
-  URL_HASH SHA256=f7004a4d1df1c834923826553dcf543241c5236c9959554f7c4beabd8757c746
+  URL https://github.com/CogniPilot/synapse_fbs/releases/download/v0.6.0/synapse_fbs-c.tar.gz
+  URL_HASH SHA256=b9a25c3b4b8105934023c86597d925272aca2c14b07ebf710760fa4928780991
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(synapse_fbs_c)
@@ -18,6 +18,8 @@ FetchContent_MakeAvailable(synapse_fbs_c)
 zephyr_library_named(csyn)
 
 set(CSYN_DIR ${CMAKE_CURRENT_LIST_DIR})
+
+zephyr_linker_sources(DATA_SECTIONS ${CSYN_DIR}/csyn_sections.ld)
 
 zephyr_include_directories(${CSYN_DIR}/include)
 zephyr_system_include_directories(${synapse_fbs_c_SOURCE_DIR}/include)

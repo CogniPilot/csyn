@@ -13,6 +13,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use zenoh::Wait;
 
+use crate::contract_warning::ContractWarningThrottle;
 use crate::types::TopicType;
 use crate::zenoh_util::open_session;
 
@@ -83,6 +84,7 @@ fn spawn_observer(config: GraphConfig, state: Arc<Mutex<GraphState>>, shutdown: 
                 return;
             }
         };
+        let mut warnings = ContractWarningThrottle::default();
 
         while !shutdown.load(Ordering::Relaxed) {
             let sample = match subscriber.recv_timeout(Duration::from_millis(100)) {
@@ -97,9 +99,16 @@ fn spawn_observer(config: GraphConfig, state: Arc<Mutex<GraphState>>, shutdown: 
 
             let topic = sample.key_expr().to_string();
             let payload_len = sample.payload().to_bytes().len();
-            let root_type = TopicType::infer(&topic)
-                .and_then(|known_type| known_type.wire_type())
-                .map(str::to_owned);
+            let known_type = match TopicType::from_value_encoding(sample.encoding()) {
+                Ok(known) => known,
+                Err(error) => {
+                    warnings.warn(&topic, &error);
+                    state.lock().expect("graph state poisoned").last_error =
+                        Some(format!("rejecting {topic}: {error}"));
+                    continue;
+                }
+            };
+            let root_type = known_type.wire_type().map(str::to_owned);
             state.lock().expect("graph state poisoned").observe_topic(
                 topic,
                 payload_len,

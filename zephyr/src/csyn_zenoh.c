@@ -4,6 +4,8 @@
 
 #include <csyn/csyn.h>
 
+#include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <zephyr/init.h>
@@ -15,10 +17,51 @@
 
 LOG_MODULE_REGISTER(csyn_zenoh, LOG_LEVEL_INF);
 
-#define CSYN_ZENOH_MAX_TOPICS 32U
+#define CSYN_ZENOH_MAX_TOPICS             32U
+#define CSYN_VALUE_CONTRACT_MAX           192U
+#define CSYN_CONTRACT_WARNING_INTERVAL_MS 10000
 
 static K_THREAD_STACK_DEFINE(g_csyn_zenoh_stack, CONFIG_CSYN_ZENOH_THREAD_STACK_SIZE);
 static struct k_thread g_csyn_zenoh_thread;
+
+static int value_contract(const synapse_topic_info_t *info, char *out, size_t out_size)
+{
+	const char *media_type =
+		info->fixed_layout ? "application/x-synapse-struct" : "application/x-flatbuffers";
+
+	if (info->wire_type == NULL || info->schema_hash == NULL) {
+		return -EINVAL;
+	}
+	return snprintf(out, out_size, "%s;type=%s;schema=sha256-128:%s", media_type,
+			info->wire_type, info->schema_hash);
+}
+
+static bool sample_contract_matches(z_loaned_sample_t *sample, struct csyn_topic *topic)
+{
+	char expected[CSYN_VALUE_CONTRACT_MAX];
+	z_owned_string_t received;
+	int expected_len = value_contract(topic->info, expected, sizeof(expected));
+	bool matches = false;
+
+	z_internal_null(&received);
+	if (expected_len > 0 && (size_t)expected_len < sizeof(expected) &&
+	    z_encoding_to_string(z_sample_encoding(sample), &received) >= 0) {
+		matches = z_string_len(z_loan(received)) == (size_t)expected_len &&
+			  memcmp(z_string_data(z_loan(received)), expected, expected_len) == 0;
+	}
+
+	if (!matches) {
+		int64_t now = k_uptime_get();
+		if (topic->last_contract_warning_ms == 0 ||
+		    now - topic->last_contract_warning_ms >= CSYN_CONTRACT_WARNING_INTERVAL_MS) {
+			LOG_WRN("rejecting %s: incompatible or missing value contract",
+				topic->info->key);
+			topic->last_contract_warning_ms = MAX(now, 1);
+		}
+	}
+	z_drop(z_move(received));
+	return matches;
+}
 
 static void input_handler(z_loaned_sample_t *sample, void *arg)
 {
@@ -27,14 +70,18 @@ static void input_handler(z_loaned_sample_t *sample, void *arg)
 	uint8_t buf[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
 	size_t payload_len = z_bytes_len(z_sample_payload(sample));
 
+	if (!sample_contract_matches(sample, topic)) {
+		return;
+	}
+
 	if (payload_len > MIN(sizeof(buf), (size_t)topic->max_size)) {
-		LOG_WRN("zenoh payload too large for %s: %zu", topic->key_suffix, payload_len);
+		LOG_WRN("zenoh payload too large for %s: %zu", topic->key, payload_len);
 		return;
 	}
 
 	reader = z_bytes_get_reader(z_sample_payload(sample));
 	if (z_bytes_reader_read(&reader, buf, payload_len) != payload_len) {
-		LOG_WRN("zenoh payload read failed for %s", topic->key_suffix);
+		LOG_WRN("zenoh payload read failed for %s", topic->key);
 		return;
 	}
 
@@ -116,16 +163,20 @@ static int open_session(z_owned_session_t *session)
 	return 0;
 }
 
-static int zenoh_put(const z_loaned_session_t *session, const char *keyexpr, const uint8_t *payload,
-		     size_t payload_len)
+static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info_t *info,
+		     const uint8_t *payload, size_t payload_len)
 {
+	char contract[CSYN_VALUE_CONTRACT_MAX];
 	z_owned_bytes_t bytes;
+	z_owned_encoding_t encoding;
 	z_view_keyexpr_t view;
+	z_put_options_t options;
 	int rc;
 
 	z_internal_null(&bytes);
+	z_internal_null(&encoding);
 
-	rc = z_view_keyexpr_from_str(&view, keyexpr);
+	rc = z_view_keyexpr_from_str(&view, info->key);
 	if (rc < 0) {
 		return rc;
 	}
@@ -134,8 +185,20 @@ static int zenoh_put(const z_loaned_session_t *session, const char *keyexpr, con
 	if (rc < 0) {
 		return rc;
 	}
+	rc = value_contract(info, contract, sizeof(contract));
+	if (rc <= 0 || (size_t)rc >= sizeof(contract)) {
+		z_drop(z_move(bytes));
+		return -EINVAL;
+	}
+	rc = z_encoding_from_str(&encoding, contract);
+	if (rc < 0) {
+		z_drop(z_move(bytes));
+		return rc;
+	}
+	z_put_options_default(&options);
+	options.encoding = z_move(encoding);
 
-	return z_put(session, z_loan(view), z_move(bytes), NULL);
+	return z_put(session, z_loan(view), z_move(bytes), &options);
 }
 
 static void put_topic_if_updated(const z_loaned_session_t *session, struct csyn_topic *topic,
@@ -153,7 +216,7 @@ static void put_topic_if_updated(const z_loaned_session_t *session, struct csyn_
 		return;
 	}
 
-	if (zenoh_put(session, topic->info->key, buf, len) == 0) {
+	if (zenoh_put(session, topic->info, buf, len) == 0) {
 		*last_generation = generation;
 	}
 }

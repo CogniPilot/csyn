@@ -1,5 +1,6 @@
 mod bag;
 mod cli;
+mod contract_warning;
 mod graph;
 mod types;
 mod zenoh_util;
@@ -23,8 +24,10 @@ use zenoh::Wait;
 
 use crate::bag::BagWriter;
 use crate::cli::{
-    BagCommand, BagExportFormat, Cli, Command, GraphCommand, TopicCommand, TopicOutput, TypeCommand,
+    BagCommand, BagExportFormat, Cli, Command, GraphCommand, TopicCommand, TopicOutput,
+    TopicPubArgs, TypeCommand,
 };
+use crate::contract_warning::ContractWarningThrottle;
 use crate::types::{TopicType, publish_key, subscribe_keyexpr};
 use crate::zenoh_util::open_session;
 
@@ -60,7 +63,11 @@ fn run_graph(connect: String, command: GraphCommand, shutdown: Arc<AtomicBool>) 
 
 fn run_topic(connect: String, command: TopicCommand, shutdown: Arc<AtomicBool>) -> Result<()> {
     match command {
-        TopicCommand::List { duration } => topic_list(connect, duration, shutdown),
+        TopicCommand::List {
+            filter,
+            ty,
+            duration,
+        } => topic_list(connect, filter, ty, duration, shutdown),
         TopicCommand::Echo {
             topic,
             ty,
@@ -68,27 +75,33 @@ fn run_topic(connect: String, command: TopicCommand, shutdown: Arc<AtomicBool>) 
             once,
             raw,
         } => topic_echo(connect, topic, ty, output, once, raw, shutdown),
-        TopicCommand::Pub {
-            topic,
-            file,
-            text,
-            rate,
-            count,
-        } => topic_pub(connect, topic, file, text, rate, count, shutdown),
+        TopicCommand::Pub(args) => topic_pub(connect, args, shutdown),
         TopicCommand::Info { topic, duration } => topic_info(connect, topic, duration, shutdown),
         TopicCommand::Hz { topic, duration } => topic_hz(connect, topic, duration, shutdown),
         TopicCommand::Bw { topic, duration } => topic_bw(connect, topic, duration, shutdown),
     }
 }
 
-fn topic_list(connect: String, duration: f64, shutdown: Arc<AtomicBool>) -> Result<()> {
+fn topic_list(
+    connect: String,
+    filter: Option<String>,
+    ty: Option<String>,
+    duration: f64,
+    shutdown: Arc<AtomicBool>,
+) -> Result<()> {
+    let keyexpr = filter
+        .as_deref()
+        .map(subscribe_keyexpr)
+        .unwrap_or_else(|| "**".to_string());
+    let type_filter = ty.as_deref().map(TopicType::require).transpose()?;
     let session = open_session(&connect)?;
     let subscriber = session
-        .declare_subscriber("**")
+        .declare_subscriber(keyexpr.clone())
         .wait()
-        .map_err(|error| anyhow!("failed to subscribe to **: {error}"))?;
+        .map_err(|error| anyhow!("failed to subscribe to {keyexpr}: {error}"))?;
     let deadline = Instant::now() + duration_from_secs(duration)?;
-    let mut topics = std::collections::BTreeSet::new();
+    let mut topics = std::collections::BTreeMap::new();
+    let mut warnings = ContractWarningThrottle::default();
 
     while !shutdown.load(Ordering::Relaxed) && Instant::now() < deadline {
         let Some(sample) = subscriber
@@ -97,14 +110,29 @@ fn topic_list(connect: String, duration: f64, shutdown: Arc<AtomicBool>) -> Resu
         else {
             continue;
         };
-        topics.insert(sample.key_expr().to_string());
+        let key = sample.key_expr().to_string();
+        let known = match require_value_type(&key, sample.encoding(), None) {
+            Ok(known) => known,
+            Err(error) => {
+                warnings.warn(&key, error);
+                continue;
+            }
+        };
+        if type_filter.is_some_and(|expected| expected.topic.id != known.topic.id) {
+            continue;
+        }
+        if let Some(previous) = topics.insert(key.clone(), known.topic.name)
+            && previous != known.topic.name
+        {
+            return Err(anyhow!(
+                "topic {key} changed value type from {previous} to {}",
+                known.topic.name
+            ));
+        }
     }
 
-    for topic in topics {
-        match TopicType::infer(&topic) {
-            Some(known) => println!("{topic} [{}]", known.topic.name),
-            None => println!("{topic}"),
-        }
+    for (topic, topic_type) in topics {
+        println!("{topic} [{topic_type}]");
     }
     Ok(())
 }
@@ -125,6 +153,7 @@ fn topic_echo(
         .wait()
         .map_err(|error| anyhow!("failed to subscribe to {keyexpr}: {error}"))?;
     let forced_type = ty.as_deref().map(TopicType::require).transpose()?;
+    let mut warnings = ContractWarningThrottle::default();
 
     while !shutdown.load(Ordering::Relaxed) {
         let sample = subscriber
@@ -132,12 +161,18 @@ fn topic_echo(
             .map_err(|error| anyhow!("failed to receive sample: {error}"))?;
         let key = sample.key_expr().to_string();
         let payload = sample.payload().to_bytes().to_vec();
-        let known_type = forced_type.or_else(|| TopicType::infer(&key));
+        let known_type = match require_value_type(&key, sample.encoding(), forced_type) {
+            Ok(known) => known,
+            Err(error) => {
+                warnings.warn(&key, error);
+                continue;
+            }
+        };
 
         if raw {
             println!("{}", hex_dump(&payload));
         } else {
-            print_sample(&key, known_type, &payload, output)?;
+            print_sample(&key, Some(known_type), &payload, output)?;
         }
 
         if once {
@@ -147,15 +182,15 @@ fn topic_echo(
     Ok(())
 }
 
-fn topic_pub(
-    connect: String,
-    topic: String,
-    file: Option<PathBuf>,
-    text: Option<String>,
-    rate: f64,
-    count: Option<u64>,
-    shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+fn topic_pub(connect: String, args: TopicPubArgs, shutdown: Arc<AtomicBool>) -> Result<()> {
+    let TopicPubArgs {
+        topic,
+        ty,
+        file,
+        text,
+        rate,
+        count,
+    } = args;
     let payload = match (file, text) {
         (Some(path), None) => fs::read(&path)
             .with_context(|| format!("failed to read payload file {}", path.display()))?,
@@ -165,6 +200,10 @@ fn topic_pub(
     };
 
     let key = publish_key(&topic);
+    let known_type = TopicType::require(&ty)?;
+    known_type
+        .decode(&payload)
+        .with_context(|| format!("payload does not match required type {ty}"))?;
     let session = open_session(&connect)?;
     let delay = if rate > 0.0 {
         Some(Duration::from_secs_f64(1.0 / rate))
@@ -185,6 +224,7 @@ fn topic_pub(
 
         session
             .put(key.clone(), payload.clone())
+            .encoding(known_type.zenoh_encoding())
             .wait()
             .map_err(|error| anyhow!("failed to publish {key}: {error}"))?;
         sent += 1;
@@ -207,7 +247,7 @@ fn topic_info(
 ) -> Result<()> {
     let stats = observe_topic(connect, topic.clone(), duration, shutdown)?;
     println!("Topic: {topic}");
-    match TopicType::find(&topic) {
+    match stats.known_type {
         Some(known) => {
             println!("Type: {}", known.wire_type().unwrap_or(known.topic.name));
             println!(
@@ -215,8 +255,9 @@ fn topic_info(
                 known.topic.schema_file,
                 synapse_fbs::VERSION
             );
+            println!("Encoding: {}", known.zenoh_encoding());
         }
-        None => println!("Type: unknown"),
+        None => println!("Type: not observed"),
     }
     println!("Samples: {}", stats.samples);
     println!("Bytes: {}", stats.bytes);
@@ -273,6 +314,7 @@ struct TopicStats {
     samples: u64,
     bytes: u64,
     elapsed: Duration,
+    known_type: Option<TopicType>,
 }
 
 fn observe_topic(
@@ -292,6 +334,8 @@ fn observe_topic(
     let deadline = started + requested;
     let mut samples = 0_u64;
     let mut bytes = 0_u64;
+    let mut known_type = None;
+    let mut warnings = ContractWarningThrottle::default();
 
     while !shutdown.load(Ordering::Relaxed) && Instant::now() < deadline {
         let Some(sample) = subscriber
@@ -300,6 +344,15 @@ fn observe_topic(
         else {
             continue;
         };
+        let key = sample.key_expr().to_string();
+        let sample_type = match require_value_type(&key, sample.encoding(), known_type) {
+            Ok(known) => known,
+            Err(error) => {
+                warnings.warn(&key, error);
+                continue;
+            }
+        };
+        known_type = Some(sample_type);
         samples += 1;
         bytes += sample.payload().to_bytes().len() as u64;
     }
@@ -308,7 +361,27 @@ fn observe_topic(
         samples,
         bytes,
         elapsed: started.elapsed(),
+        known_type,
     })
+}
+
+fn require_value_type(
+    key: &str,
+    encoding: &zenoh::bytes::Encoding,
+    expected: Option<TopicType>,
+) -> Result<TopicType> {
+    let actual = TopicType::from_value_encoding(encoding)
+        .with_context(|| format!("topic {key} has no valid Synapse value contract"))?;
+    if let Some(expected) = expected
+        && expected.topic.id != actual.topic.id
+    {
+        return Err(anyhow!(
+            "topic {key} advertises {}, expected {}",
+            actual.topic.name,
+            expected.topic.name
+        ));
+    }
+    Ok(actual)
 }
 
 fn run_type(command: TypeCommand) -> Result<()> {
@@ -337,6 +410,8 @@ fn run_type(command: TypeCommand) -> Result<()> {
             println!("key: {}", known.topic.key);
             println!("wire_type: {}", known.wire_type().unwrap_or("-"));
             println!("encoding: {}", known.topic.encoding);
+            println!("zenoh_value_contract: {}", known.zenoh_encoding());
+            println!("schema_hash: sha256-128:{}", known.schema_hash());
             println!(
                 "payload_size: {}",
                 known
@@ -417,6 +492,7 @@ fn bag_record(
         synapse_fbs::VERSION
     );
     let mut writer = BagWriter::create(&output, &library)?;
+    let mut warnings = ContractWarningThrottle::default();
     let started = Instant::now();
     let deadline = duration
         .map(duration_from_secs)
@@ -445,7 +521,13 @@ fn bag_record(
 
         let key = sample.key_expr().to_string();
         let payload = sample.payload().to_bytes().to_vec();
-        let known_type = forced_type.or_else(|| TopicType::infer(&key));
+        let known_type = match require_value_type(&key, sample.encoding(), forced_type) {
+            Ok(known) => known,
+            Err(error) => {
+                warnings.warn(&key, error);
+                continue;
+            }
+        };
         writer.write_sample(&key, known_type, bag::unix_now_ns()?, &payload)?;
         recorded += 1;
     }
@@ -492,8 +574,16 @@ fn bag_info(input: PathBuf) -> Result<()> {
                 .copied()
                 .unwrap_or(0);
             println!(
-                "  {} [{}] messages={} encoding={}",
-                channel.topic, schema, count, channel.message_encoding
+                "  {} [{}] messages={} encoding={} contract={}",
+                channel.topic,
+                schema,
+                count,
+                channel.message_encoding,
+                channel
+                    .metadata
+                    .get(bag::VALUE_CONTRACT_METADATA_KEY)
+                    .map(String::as_str)
+                    .unwrap_or("missing")
             );
         }
     }
@@ -535,8 +625,38 @@ fn bag_play(
         }
         previous_ns = Some(message.log_time);
 
+        let schema = message.channel.schema.as_ref().ok_or_else(|| {
+            anyhow!(
+                "MCAP channel {} has no required Synapse schema",
+                message.channel.topic
+            )
+        })?;
+        let known_type = TopicType::find(&schema.name)
+            .ok_or_else(|| anyhow!("unknown MCAP Synapse type {}", schema.name))?;
+        if schema.encoding != types::SCHEMA_ENCODING_FLATBUFFER
+            || schema.data.as_ref() != known_type.schema.bfbs
+            || message.channel.message_encoding != known_type.message_encoding()
+            || message
+                .channel
+                .metadata
+                .get(bag::VALUE_CONTRACT_METADATA_KEY)
+                != Some(&known_type.zenoh_encoding().to_string())
+        {
+            return Err(anyhow!(
+                "MCAP channel {} has an incompatible Synapse schema contract",
+                message.channel.topic
+            ));
+        }
+        known_type.decode(&message.data).with_context(|| {
+            format!(
+                "MCAP payload on {} does not match {}",
+                message.channel.topic, known_type.topic.name
+            )
+        })?;
+
         session
             .put(message.channel.topic.clone(), message.data.to_vec())
+            .encoding(known_type.zenoh_encoding())
             .wait()
             .map_err(|error| anyhow!("failed to publish {}: {error}", message.channel.topic))?;
         played += 1;
@@ -581,8 +701,34 @@ fn bag_export_jsonl(
             continue;
         }
 
-        let known_type = TopicType::infer(&message.channel.topic);
-        let decoded = known_type.and_then(|known| known.decode(&message.data).ok());
+        let schema = message.channel.schema.as_ref().ok_or_else(|| {
+            anyhow!(
+                "MCAP channel {} has no required Synapse schema",
+                message.channel.topic
+            )
+        })?;
+        let known_type = TopicType::find(&schema.name)
+            .ok_or_else(|| anyhow!("unknown MCAP Synapse type {}", schema.name))?;
+        if schema.encoding != types::SCHEMA_ENCODING_FLATBUFFER
+            || schema.data.as_ref() != known_type.schema.bfbs
+            || message.channel.message_encoding != known_type.message_encoding()
+            || message
+                .channel
+                .metadata
+                .get(bag::VALUE_CONTRACT_METADATA_KEY)
+                != Some(&known_type.zenoh_encoding().to_string())
+        {
+            return Err(anyhow!(
+                "MCAP channel {} has an incompatible Synapse schema contract",
+                message.channel.topic
+            ));
+        }
+        let decoded = Some(known_type.decode(&message.data).with_context(|| {
+            format!(
+                "MCAP payload on {} does not match {}",
+                message.channel.topic, known_type.topic.name
+            )
+        })?);
         let line = ExportFrame {
             log_time_ns: message.log_time,
             topic: &message.channel.topic,
@@ -592,6 +738,10 @@ fn bag_export_jsonl(
                 .as_ref()
                 .map(|schema| schema.name.clone()),
             encoding: &message.channel.message_encoding,
+            value_contract: message
+                .channel
+                .metadata
+                .get(bag::VALUE_CONTRACT_METADATA_KEY),
             payload_base64: BASE64.encode(&message.data),
             decoded,
         };
@@ -609,6 +759,7 @@ struct ExportFrame<'a> {
     topic: &'a str,
     wire_type: Option<String>,
     encoding: &'a str,
+    value_contract: Option<&'a String>,
     payload_base64: String,
     decoded: Option<String>,
 }

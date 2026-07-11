@@ -9,8 +9,19 @@
 #include <csyn/csyn.h>
 #include <csyn/csyn_codec.h>
 
+#include <synapse/control_reader.h>
 #include <synapse/state_reader.h>
 #include <synapse/topic_catalog.h>
+
+/* csyn no longer ships a topic list: the application (here, the test)
+ * declares the topics it carries and csyn resolves them at init. */
+CSYN_TOPIC_DEFINE(manual, "manual", CSYN_DIR_RX, sizeof(synapse_topic_ManualControlData_t));
+CSYN_TOPIC_DEFINE(mocap, "mocap", CSYN_DIR_RX, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
+CSYN_TOPIC_DEFINE(pwm, "pwm", CSYN_DIR_TX, sizeof(synapse_topic_PwmSignalOutputsData_t));
+CSYN_TOPIC_DEFINE(health, "health", CSYN_DIR_TX, sizeof(synapse_topic_VehicleHealthData_t));
+CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));
+CSYN_TOPIC_DEFINE(att_sp, "att_sp", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeCommandData_t));
+CSYN_TOPIC_DEFINE(loop, "loop", CSYN_DIR_TX, sizeof(synapse_topic_ControlLoopMetricsData_t));
 
 ZTEST(csyn_store, test_registry_resolves_catalog)
 {
@@ -23,21 +34,21 @@ ZTEST(csyn_store, test_registry_resolves_catalog)
 		struct csyn_topic *topic = csyn_topic_at(i);
 
 		zassert_not_null(topic);
-		zassert_not_null(topic->info, "%s missing catalog info", topic->key_suffix);
-		zassert_equal(topic, csyn_topic_find(topic->key_suffix));
+		zassert_not_null(topic->info, "%s missing catalog info", topic->key);
+		zassert_equal(topic, csyn_topic_find(topic->key));
 		zassert_equal(topic, csyn_topic_find(topic->info->name));
 		zassert_equal(topic, csyn_topic_find(topic->info->key));
 		zassert_equal(topic, csyn_topic_by_catalog_id(topic->info->id));
 		if (topic->info->fixed_layout) {
 			zassert_equal(topic->max_size, topic->info->payload_size,
-				      "%s slot size disagrees with catalog", topic->key_suffix);
+				      "%s slot size disagrees with catalog", topic->key);
 		}
 	}
 }
 
 ZTEST(csyn_store, test_publish_copy_generation)
 {
-	struct csyn_topic *topic = csyn_topic_find("attitude_estimate");
+	struct csyn_topic *topic = csyn_topic_find("att");
 	synapse_topic_AttitudeEstimateData_t sample = {.timestamp_us = 1234U};
 	uint8_t oversize[sizeof(sample) + 1U];
 	uint8_t copy_buf[sizeof(sample)];

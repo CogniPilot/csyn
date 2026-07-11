@@ -2,6 +2,8 @@ use anyhow::{Result, anyhow};
 use synapse_fbs::schemas::{self, EmbeddedSchema};
 use synapse_fbs::topic_catalog::{self, TopicInfo};
 use synapse_fbs::topic_decode;
+use synapse_fbs::value_contract;
+use zenoh::bytes::Encoding;
 
 /// MCAP well-known schema encoding for flatc binary schemas.
 pub const SCHEMA_ENCODING_FLATBUFFER: &str = "flatbuffer";
@@ -10,7 +12,6 @@ pub const MESSAGE_ENCODING_FLATBUFFER: &str = "flatbuffer";
 /// Message encoding for the canonical Synapse bare fixed-layout struct
 /// payloads; these carry no root offset, so they are not plain "flatbuffer".
 pub const MESSAGE_ENCODING_SYNAPSE_STRUCT: &str = "synapse_struct";
-
 /// A catalog topic paired with the embedded schema file that defines it. All
 /// metadata resolves against the synapse_fbs release this binary was built
 /// with, so the wire contract is pinned by the crate, not vendored copies.
@@ -31,14 +32,14 @@ impl TopicType {
         topic_catalog::TOPICS.iter().map(Self::from_topic)
     }
 
-    /// Find a topic by catalog name, key suffix, canonical key, wire type,
-    /// or any namespaced/instance-suffixed key expression.
+    /// Find a topic by catalog name, canonical key, wire type, or any
+    /// namespaced/instance-suffixed key expression.
     pub fn find(name: &str) -> Option<TopicType> {
         topic_catalog::TOPICS
             .iter()
             .find(|topic| {
                 topic.name.eq_ignore_ascii_case(name)
-                    || topic.key_suffix == name
+                    || topic.key == name
                     || topic.root_table.eq_ignore_ascii_case(name)
             })
             .map(Self::from_topic)
@@ -62,10 +63,23 @@ impl TopicType {
         topic_catalog::topic_by_key(keyexpr).map(Self::from_topic)
     }
 
+    /// Resolve a topic exclusively from its required Zenoh value contract.
+    /// The contract must exactly match this csyn build's embedded schema.
+    pub fn from_value_encoding(encoding: &Encoding) -> Result<TopicType> {
+        let received = encoding.to_string();
+        let topic =
+            value_contract::topic_for_encoding(&received).map_err(|error| anyhow!(error))?;
+        Ok(Self::from_topic(topic))
+    }
+
     /// Fully qualified FlatBuffers type carried on the wire: the bare struct
     /// for fixed-layout topics, the root table otherwise.
     pub fn wire_type(self) -> Option<&'static str> {
-        topic_decode::topic_wire_type(self.topic)
+        Some(self.topic.wire_type)
+    }
+
+    pub fn schema_hash(self) -> &'static str {
+        self.topic.schema_hash
     }
 
     /// MCAP message encoding for this topic's canonical Zenoh payload.
@@ -75,6 +89,11 @@ impl TopicType {
         } else {
             MESSAGE_ENCODING_FLATBUFFER
         }
+    }
+
+    /// Canonical, mandatory Zenoh encoding and exact schema fingerprint.
+    pub fn zenoh_encoding(self) -> Encoding {
+        Encoding::from(value_contract::encoding_for_topic(self.topic))
     }
 
     /// Decode a payload and render it with the generated pretty Debug format.
@@ -92,7 +111,7 @@ pub fn subscribe_keyexpr(arg: &str) -> String {
         return arg.to_string();
     }
     match TopicType::find(arg) {
-        Some(known) => format!("**/{}/**", known.topic.key_suffix),
+        Some(known) => format!("**/{}/**", known.topic.key),
         None => arg.to_string(),
     }
 }
@@ -114,25 +133,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_topics_by_name_suffix_and_wire_type() {
+    fn finds_topics_by_name_key_and_wire_type() {
         assert!(TopicType::find("VehicleHealth").is_some());
-        assert!(TopicType::find("vehicle_health").is_some());
+        assert!(TopicType::find("health").is_some());
         assert!(TopicType::find("synapse.topic.VehicleHealthData").is_some());
         assert!(TopicType::find("no_such_topic").is_none());
     }
 
     #[test]
     fn infers_topics_from_key_expressions() {
-        let known = TopicType::infer("cub1/synapse/v1/topic/attitude_estimate").unwrap();
+        let known = TopicType::infer("cub1/att").unwrap();
         assert_eq!(known.topic.name, "AttitudeEstimate");
         assert_eq!(known.schema.file, known.topic.schema_file);
+
+        let instanced = TopicType::infer("cub1/imu/0").unwrap();
+        assert_eq!(instanced.topic.name, "InertialSample");
+    }
+
+    #[test]
+    fn requires_an_exact_zenoh_value_contract() {
+        let known = TopicType::find("VehicleHealth").unwrap();
+        let encoding = known.zenoh_encoding();
+        assert_eq!(
+            TopicType::from_value_encoding(&encoding)
+                .unwrap()
+                .topic
+                .name,
+            "VehicleHealth"
+        );
+
+        assert!(TopicType::from_value_encoding(&Encoding::ZENOH_BYTES).is_err());
+        let unknown = Encoding::from(
+            "application/x-synapse-struct;type=synapse.topic.UnknownData;schema=sha256-128:00000000000000000000000000000000",
+        );
+        assert!(
+            TopicType::from_value_encoding(&unknown)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown Synapse wire type")
+        );
+        let mismatched = Encoding::from(
+            encoding
+                .to_string()
+                .replace("schema=sha256-128:", "schema=sha256-128:deadbeef"),
+        );
+        assert!(TopicType::from_value_encoding(&mismatched).is_err());
+        let extra = Encoding::from(format!("{encoding};extra=not-allowed"));
+        assert!(TopicType::from_value_encoding(&extra).is_err());
     }
 
     #[test]
     fn expands_bare_names_to_key_expressions() {
-        assert_eq!(subscribe_keyexpr("vehicle_health"), "**/vehicle_health/**");
+        assert_eq!(subscribe_keyexpr("VehicleHealth"), "**/health/**");
+        assert_eq!(subscribe_keyexpr("health"), "**/health/**");
         assert_eq!(subscribe_keyexpr("a/b/**"), "a/b/**");
-        assert!(publish_key("vehicle_health").ends_with("/vehicle_health"));
+        assert_eq!(publish_key("VehicleHealth"), "health");
+        assert_eq!(publish_key("health"), "health");
     }
 
     #[test]
@@ -140,6 +196,7 @@ mod tests {
         for known in TopicType::all() {
             assert!(!known.schema.bfbs.is_empty(), "{}", known.topic.name);
             assert!(known.wire_type().is_some(), "{}", known.topic.name);
+            assert_eq!(known.schema_hash().len(), 32, "{}", known.topic.name);
         }
     }
 

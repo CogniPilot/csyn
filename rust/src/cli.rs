@@ -49,6 +49,17 @@ pub enum Command {
 pub enum TopicCommand {
     /// List topics observed during a short subscription window.
     List {
+        #[arg(
+            value_name = "TOPIC",
+            help = "Only observe this catalog topic or key expression"
+        )]
+        filter: Option<String>,
+        #[arg(
+            long = "type",
+            value_name = "TYPE",
+            help = "Only list topics carrying this catalog type"
+        )]
+        ty: Option<String>,
         #[arg(long, default_value_t = 2.0, help = "Observation window in seconds")]
         duration: f64,
     },
@@ -69,24 +80,7 @@ pub enum TopicCommand {
         raw: bool,
     },
     /// Publish a raw payload from a file or text.
-    Pub {
-        topic: String,
-        #[arg(long, value_name = "PATH", conflicts_with = "text")]
-        file: Option<PathBuf>,
-        #[arg(long, conflicts_with = "file")]
-        text: Option<String>,
-        #[arg(
-            long,
-            default_value_t = 0.0,
-            help = "Publish rate in Hz; 0 publishes once"
-        )]
-        rate: f64,
-        #[arg(
-            long,
-            help = "Number of samples to publish; unlimited with --rate if omitted"
-        )]
-        count: Option<u64>,
-    },
+    Pub(TopicPubArgs),
     /// Show observed topic stats and inferred type.
     Info {
         topic: String,
@@ -105,6 +99,33 @@ pub enum TopicCommand {
         #[arg(long, default_value_t = 5.0)]
         duration: f64,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct TopicPubArgs {
+    pub topic: String,
+    #[arg(
+        long = "type",
+        value_name = "TYPE",
+        required = true,
+        help = "Required Synapse catalog type for the value contract"
+    )]
+    pub ty: String,
+    #[arg(long, value_name = "PATH", conflicts_with = "text")]
+    pub file: Option<PathBuf>,
+    #[arg(long, conflicts_with = "file")]
+    pub text: Option<String>,
+    #[arg(
+        long,
+        default_value_t = 0.0,
+        help = "Publish rate in Hz; 0 publishes once"
+    )]
+    pub rate: f64,
+    #[arg(
+        long,
+        help = "Number of samples to publish; unlimited with --rate if omitted"
+    )]
+    pub count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

@@ -10,19 +10,20 @@ tree, so the CLI cannot drift from the release it was built against
 (`csyn type list` prints that release).
 
 The command grammar intentionally mirrors common ROS 2 workflows. Topic
-arguments accept catalog names (`vehicle_health`, `VehicleHealth`) as well as
+arguments accept catalog keys and names (`health`, `VehicleHealth`) as well as
 raw Zenoh key expressions; bare names expand to the canonical catalog keys,
 including namespaced and instance-suffixed matches:
 
 ```sh
 csyn topic list
-csyn topic echo attitude_estimate
-csyn topic pub attitude_estimate --file sample.bin --rate 50
-csyn topic hz attitude_estimate
-csyn topic bw '**/inertial_sample/**'
+csyn topic list att --type AttitudeEstimate
+csyn topic echo att
+csyn topic pub att --type AttitudeEstimate --file sample.bin --rate 50
+csyn topic hz att
+csyn topic bw '**/imu/**'
 
 csyn type list
-csyn type show vehicle_health --fbs
+csyn type show health --fbs
 
 csyn bag record '**' -o flight.mcap
 csyn bag info flight.mcap
@@ -48,23 +49,35 @@ zenohd -l tcp/127.0.0.1:7447
 ## Topic Commands
 
 `topic list` subscribes to `**` for a short observation window and prints
-topics that were seen, tagged with their catalog type when the key parses as
-a catalog topic. Zenoh does not provide ROS-style graph discovery by default,
-so this is traffic-observed discovery for now.
-
-`topic echo` infers the topic from the sample key (or `--type`) and decodes
-the payload with the generated decoder — bare fixed-layout structs and root
-tables both render through the bindings' pretty Debug format:
+topics carrying a valid Synapse value contract. An optional positional filter
+narrows the subscription to one catalog topic or key expression, and `--type`
+keeps only topics carrying that catalog type. Type inference from keys is
+not used. Metadata-free or schema-mismatched samples are rejected, with
+warnings throttled to once per topic every ten seconds. Zenoh
+does not provide ROS-style graph discovery by default, so this is
+traffic-observed discovery for now.
 
 ```sh
-csyn topic echo attitude_estimate
+csyn topic list
+csyn topic list 'cub1/**'
+csyn topic list --type InertialSample
+```
+
+`topic echo` requires and validates the value's fully qualified wire type and
+per-message schema fingerprint before decoding. `--type` is an optional
+additional assertion; it never bypasses value-contract validation:
+
+```sh
+csyn topic echo att
 csyn topic echo 'cub1/**' --type AttitudeEstimate --output json
 csyn topic echo test/topic --raw
 ```
 
-`topic pub` publishes raw payloads from text or files; bare catalog names
-resolve to the canonical publication key. Typed JSON-to-FlatBuffer publish is
-intentionally left for a BFBS reflection builder layer.
+`topic pub` publishes raw payloads from text or files and requires `--type`.
+It validates the payload and attaches the canonical value contract; bare
+catalog names resolve to the canonical publication key. Typed
+JSON-to-FlatBuffer publish is intentionally left for a BFBS reflection builder
+layer.
 
 ## Graph Debugger
 
@@ -85,12 +98,14 @@ Bags are standard [MCAP](https://mcap.dev) files. Each observed Zenoh key
 becomes a channel; each catalog topic contributes a schema record with the
 fully qualified wire type as its name, `flatbuffer` encoding, and the
 embedded `.bfbs` binary schema from the pinned `synapse_fbs` release as its
-data — so bags are self-describing for any MCAP tool.
+data — so bags are self-describing for any MCAP tool. Each channel also stores
+the exact Zenoh value contract in `synapse.value_contract` metadata; replay and
+export require it to match the local client.
 
 Channel message encodings mirror the catalog: `flatbuffer` for root-table
 topics and `synapse_struct` for the canonical bare fixed-layout struct
-payloads (which carry no FlatBuffers root offset). Unknown keys are recorded
-with no schema and an empty encoding.
+payloads (which carry no FlatBuffers root offset). Samples without a valid
+Synapse value contract are not recorded.
 
 The legacy `.csynbag` v1 format is retired; `bag` subcommands only speak
 MCAP.

@@ -11,49 +11,26 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
-#include <synapse/control_reader.h>
-#include <synapse/state_reader.h>
-
 LOG_MODULE_REGISTER(csyn, LOG_LEVEL_INF);
-
-#define CSYN_SLOTS(_sym, _size) static uint8_t _sym[2U * (_size)]
-
-CSYN_SLOTS(g_manual_control_slots, sizeof(synapse_topic_ManualControlData_t));
-CSYN_SLOTS(g_mocap_frame_slots, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
-CSYN_SLOTS(g_pwm_signal_outputs_slots, sizeof(synapse_topic_PwmSignalOutputsData_t));
-CSYN_SLOTS(g_vehicle_health_slots, sizeof(synapse_topic_VehicleHealthData_t));
-CSYN_SLOTS(g_attitude_estimate_slots, sizeof(synapse_topic_AttitudeEstimateData_t));
-CSYN_SLOTS(g_attitude_command_slots, sizeof(synapse_topic_AttitudeCommandData_t));
-CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetricsData_t));
-
-#define CSYN_TOPIC(_suffix, _dir, _slots)                                                          \
-	{                                                                                          \
-		.key_suffix = _suffix, .dir = _dir, .slots = _slots,                               \
-		.max_size = sizeof(_slots) / 2U,                                                   \
-	}
-
-static struct csyn_topic g_topics[] = {
-	CSYN_TOPIC("manual_control_command", CSYN_DIR_RX, g_manual_control_slots),
-	CSYN_TOPIC("mocap_frame", CSYN_DIR_RX, g_mocap_frame_slots),
-	CSYN_TOPIC("pwm_signal_outputs", CSYN_DIR_TX, g_pwm_signal_outputs_slots),
-	CSYN_TOPIC("vehicle_health", CSYN_DIR_TX, g_vehicle_health_slots),
-	CSYN_TOPIC("attitude_estimate", CSYN_DIR_TX, g_attitude_estimate_slots),
-	CSYN_TOPIC("attitude_command", CSYN_DIR_TX, g_attitude_command_slots),
-	CSYN_TOPIC("control_loop_metrics", CSYN_DIR_TX, g_control_loop_metrics_slots),
-};
 
 size_t csyn_topic_count(void)
 {
-	return ARRAY_SIZE(g_topics);
+	size_t count;
+
+	STRUCT_SECTION_COUNT(csyn_topic, &count);
+	return count;
 }
 
 struct csyn_topic *csyn_topic_at(size_t idx)
 {
-	if (idx >= ARRAY_SIZE(g_topics)) {
+	struct csyn_topic *topic;
+
+	if (idx >= csyn_topic_count()) {
 		return NULL;
 	}
 
-	return &g_topics[idx];
+	STRUCT_SECTION_GET(csyn_topic, idx, &topic);
+	return topic;
 }
 
 struct csyn_topic *csyn_topic_find(const char *name)
@@ -62,12 +39,9 @@ struct csyn_topic *csyn_topic_find(const char *name)
 		return NULL;
 	}
 
-	for (size_t i = 0U; i < ARRAY_SIZE(g_topics); i++) {
-		struct csyn_topic *topic = &g_topics[i];
-
-		if (strcmp(name, topic->key_suffix) == 0 ||
-		    (topic->info != NULL && (strcmp(name, topic->info->name) == 0 ||
-					     strcmp(name, topic->info->key) == 0))) {
+	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
+		if (strcmp(name, topic->key) == 0 ||
+		    (topic->info != NULL && strcmp(name, topic->info->name) == 0)) {
 			return topic;
 		}
 	}
@@ -77,9 +51,9 @@ struct csyn_topic *csyn_topic_find(const char *name)
 
 struct csyn_topic *csyn_topic_by_catalog_id(uint16_t id)
 {
-	for (size_t i = 0U; i < ARRAY_SIZE(g_topics); i++) {
-		if (g_topics[i].info != NULL && g_topics[i].info->id == id) {
-			return &g_topics[i];
+	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
+		if (topic->info != NULL && topic->info->id == id) {
+			return topic;
 		}
 	}
 
@@ -152,23 +126,21 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic)
 
 static int csyn_init(void)
 {
-	for (size_t i = 0U; i < ARRAY_SIZE(g_topics); i++) {
-		struct csyn_topic *topic = &g_topics[i];
-
+	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
 		for (size_t j = 0U; j < synapse_topics_count; j++) {
-			if (strcmp(synapse_topics[j].key_suffix, topic->key_suffix) == 0) {
+			if (strcmp(synapse_topics[j].key, topic->key) == 0) {
 				topic->info = &synapse_topics[j];
 				break;
 			}
 		}
 
 		if (topic->info == NULL) {
-			LOG_ERR("topic %s missing from synapse catalog", topic->key_suffix);
+			LOG_ERR("topic %s missing from synapse catalog", topic->key);
 			return -EINVAL;
 		}
 
 		if (topic->info->fixed_layout && topic->info->payload_size != topic->max_size) {
-			LOG_ERR("topic %s size mismatch: catalog %u local %u", topic->key_suffix,
+			LOG_ERR("topic %s size mismatch: catalog %u local %u", topic->key,
 				(unsigned int)topic->info->payload_size,
 				(unsigned int)topic->max_size);
 			return -EINVAL;
