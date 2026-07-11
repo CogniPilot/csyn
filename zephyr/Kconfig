@@ -28,12 +28,6 @@ config CSYN_ZROS_BRIDGE
 	  decoded and published to zros, outbound fixed-layout topics are
 	  copied from zros to the csyn store for the active transport.
 
-config CSYN_ZROS_BRIDGE_EXTERNAL_TX_TOPICS
-	bool
-	help
-	  Use outbound zros topic storage defined by the application. When disabled,
-	  the bridge defines the outbound topics it mirrors into the csyn transport.
-
 config CSYN_SHELL
 	bool "Enable csyn shell diagnostics"
 	depends on SHELL

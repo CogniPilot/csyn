@@ -66,7 +66,14 @@ fixed-layout size mismatches:
 
 CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));
 CSYN_TOPIC_DEFINE(manual, "manual", CSYN_DIR_RX, sizeof(synapse_topic_ManualControlData_t));
+CSYN_ZROS_TOPIC_DEFINE(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
+CSYN_ZROS_TOPIC_DEFINE(manual_control, struct csyn_manual_control);
 ```
+
+Each `CSYN_ZROS_TOPIC_DEFINE()` explicitly selects and allocates one topic in a
+vehicle-owned translation unit. Undeclared topics allocate no storage and are
+skipped by the bridge. CSyn only declares the topic interfaces and provides the
+bridge functions.
 
 Applications publish and subscribe through the zros topics declared in
 `<csyn/csyn_zros.h>`; the bridge mirrors whichever bridged topics the
