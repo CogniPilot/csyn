@@ -110,6 +110,17 @@ config CSYN_ZENOH_LOCATOR
 	depends on CSYN_ZENOH
 	default "udp/192.0.2.2:7447"
 
+config CSYN_NAMESPACE
+	string "Deployment namespace prepended to every csyn Zenoh key"
+	depends on CSYN_ZENOH
+	default ""
+	help
+	  Optional deployment namespace, e.g. "cub1": every catalog topic
+	  publishes and subscribes as <namespace>/<key>, following the
+	  synapse key grammar [<namespace>/]<key>[/<instance>]. Multi-segment
+	  namespaces such as "lab/cub1" are allowed. Leave empty for the bare
+	  canonical keys; no leading or trailing slash.
+
 choice CSYN_MOCAP_SOURCE
 	prompt "Stream feeding the zros mocap topic"
 	default CSYN_MOCAP_SOURCE_FRAME

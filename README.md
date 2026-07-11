@@ -52,10 +52,14 @@ CONFIG_CSYN_ZROS_BRIDGE=y
 ```
 
 and pick a transport per board: `CONFIG_CSYN_ZENOH=y` (flight hardware) or
-`CONFIG_CSYN_NATIVE_UDP=y` (native_sim). Declare the topics your application
-carries with `CSYN_TOPIC_DEFINE(symbol, key, dir, max_size)`; each key must
-be a canonical catalog key, and init fails on unknown keys or fixed-layout
-size mismatches:
+`CONFIG_CSYN_NATIVE_UDP=y` (native_sim). `CONFIG_CSYN_NAMESPACE` optionally
+scopes every Zenoh key the node publishes and subscribes, e.g. `"cub1"`
+makes the attitude estimate publish on `cub1/att` per the synapse key
+grammar `[<namespace>/]<key>[/<instance>]`; the host CLI resolves
+namespaced keys without any configuration. Declare the topics your
+application carries with `CSYN_TOPIC_DEFINE(symbol, key, dir, max_size)`;
+each key must be a canonical catalog key, and init fails on unknown keys or
+fixed-layout size mismatches:
 
 ```c
 #include <csyn/csyn.h>

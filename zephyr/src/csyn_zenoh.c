@@ -18,11 +18,32 @@
 LOG_MODULE_REGISTER(csyn_zenoh, LOG_LEVEL_INF);
 
 #define CSYN_ZENOH_MAX_TOPICS             32U
+#define CSYN_ZENOH_KEYEXPR_MAX            96U
 #define CSYN_VALUE_CONTRACT_MAX           192U
 #define CSYN_CONTRACT_WARNING_INTERVAL_MS 10000
 
 static K_THREAD_STACK_DEFINE(g_csyn_zenoh_stack, CONFIG_CSYN_ZENOH_THREAD_STACK_SIZE);
 static struct k_thread g_csyn_zenoh_thread;
+
+/* Every catalog topic this node carries publishes and subscribes as
+ * [<namespace>/]<key> per the synapse key grammar; CONFIG_CSYN_NAMESPACE
+ * scopes the whole node, e.g. "cub1".
+ */
+static int topic_keyexpr(const synapse_topic_info_t *info, char *out, size_t out_size)
+{
+	int len;
+
+	if (CONFIG_CSYN_NAMESPACE[0] != '\0') {
+		len = snprintf(out, out_size, "%s/%s", CONFIG_CSYN_NAMESPACE, info->key);
+	} else {
+		len = snprintf(out, out_size, "%s", info->key);
+	}
+
+	if (len <= 0 || (size_t)len >= out_size) {
+		return -EINVAL;
+	}
+	return 0;
+}
 
 static int value_contract(const synapse_topic_info_t *info, char *out, size_t out_size)
 {
@@ -194,7 +215,13 @@ static int declare_rx_key_subscriber(const z_loaned_session_t *session, const ch
 
 static int declare_rx_subscriber(const z_loaned_session_t *session, struct csyn_topic *topic)
 {
-	return declare_rx_key_subscriber(session, topic->info->key, topic);
+	char key[CSYN_ZENOH_KEYEXPR_MAX];
+	int rc = topic_keyexpr(topic->info, key, sizeof(key));
+
+	if (rc < 0) {
+		return rc;
+	}
+	return declare_rx_key_subscriber(session, key, topic);
 }
 
 static int declare_rx_mocap_subscriber(const z_loaned_session_t *session, const char *key,
@@ -247,10 +274,15 @@ static int open_session(z_owned_session_t *session)
 		 * the contract-enforcing one.
 		 */
 		if (strcmp(topic->key, "mocap") == 0) {
+			char key[CSYN_ZENOH_KEYEXPR_MAX];
+
 			if (!IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_FRAME)) {
 				continue;
 			}
-			rc = declare_rx_mocap_subscriber(z_loan(*session), topic->info->key, topic);
+			rc = topic_keyexpr(topic->info, key, sizeof(key));
+			if (rc == 0) {
+				rc = declare_rx_mocap_subscriber(z_loan(*session), key, topic);
+			}
 		} else {
 			rc = declare_rx_subscriber(z_loan(*session), topic);
 		}
@@ -303,6 +335,7 @@ static int open_session(z_owned_session_t *session)
 static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info_t *info,
 		     const uint8_t *payload, size_t payload_len)
 {
+	char key[CSYN_ZENOH_KEYEXPR_MAX];
 	char contract[CSYN_VALUE_CONTRACT_MAX];
 	z_owned_bytes_t bytes;
 	z_owned_encoding_t encoding;
@@ -313,7 +346,12 @@ static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info
 	z_internal_null(&bytes);
 	z_internal_null(&encoding);
 
-	rc = z_view_keyexpr_from_str(&view, info->key);
+	rc = topic_keyexpr(info, key, sizeof(key));
+	if (rc < 0) {
+		return rc;
+	}
+
+	rc = z_view_keyexpr_from_str(&view, key);
 	if (rc < 0) {
 		return rc;
 	}
