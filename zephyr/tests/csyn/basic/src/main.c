@@ -23,21 +23,21 @@ ZTEST(csyn_store, test_registry_resolves_catalog)
 		struct csyn_topic *topic = csyn_topic_at(i);
 
 		zassert_not_null(topic);
-		zassert_not_null(topic->info, "%s missing catalog info", topic->key_suffix);
-		zassert_equal(topic, csyn_topic_find(topic->key_suffix));
+		zassert_not_null(topic->info, "%s missing catalog info", topic->key);
+		zassert_equal(topic, csyn_topic_find(topic->key));
 		zassert_equal(topic, csyn_topic_find(topic->info->name));
 		zassert_equal(topic, csyn_topic_find(topic->info->key));
 		zassert_equal(topic, csyn_topic_by_catalog_id(topic->info->id));
 		if (topic->info->fixed_layout) {
 			zassert_equal(topic->max_size, topic->info->payload_size,
-				      "%s slot size disagrees with catalog", topic->key_suffix);
+				      "%s slot size disagrees with catalog", topic->key);
 		}
 	}
 }
 
 ZTEST(csyn_store, test_publish_copy_generation)
 {
-	struct csyn_topic *topic = csyn_topic_find("attitude_estimate");
+	struct csyn_topic *topic = csyn_topic_find("AttitudeEstimate");
 	synapse_topic_AttitudeEstimateData_t sample = {.timestamp_us = 1234U};
 	uint8_t oversize[sizeof(sample) + 1U];
 	uint8_t copy_buf[sizeof(sample)];

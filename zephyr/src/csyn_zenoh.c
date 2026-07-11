@@ -28,13 +28,13 @@ static void input_handler(z_loaned_sample_t *sample, void *arg)
 	size_t payload_len = z_bytes_len(z_sample_payload(sample));
 
 	if (payload_len > MIN(sizeof(buf), (size_t)topic->max_size)) {
-		LOG_WRN("zenoh payload too large for %s: %zu", topic->key_suffix, payload_len);
+		LOG_WRN("zenoh payload too large for %s: %zu", topic->key, payload_len);
 		return;
 	}
 
 	reader = z_bytes_get_reader(z_sample_payload(sample));
 	if (z_bytes_reader_read(&reader, buf, payload_len) != payload_len) {
-		LOG_WRN("zenoh payload read failed for %s", topic->key_suffix);
+		LOG_WRN("zenoh payload read failed for %s", topic->key);
 		return;
 	}
 

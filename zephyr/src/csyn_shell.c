@@ -56,7 +56,7 @@ static void csyn_topic_dynamic_get(size_t idx, struct shell_static_entry *entry)
 		return;
 	}
 
-	entry->syntax = topic->key_suffix;
+	entry->syntax = topic->key;
 	entry->handler = NULL;
 	entry->subcmd = NULL;
 	entry->help = NULL;
@@ -111,7 +111,7 @@ static void csyn_topic_line_once(const struct shell *sh, struct csyn_topic *topi
 	char rendered[256];
 	size_t len = 0U;
 	uint32_t generation = 0U;
-	const char *suffix = topic->key_suffix;
+	const char *suffix = topic->key;
 
 	if (!csyn_topic_copy(topic, g_csyn_shell_buf, sizeof(g_csyn_shell_buf), &len,
 			     &generation)) {
@@ -141,13 +141,12 @@ static int csyn_topic_echo_once(const struct shell *sh, struct csyn_topic *topic
 
 	if (!csyn_topic_copy(topic, g_csyn_shell_buf, sizeof(g_csyn_shell_buf), &len,
 			     &generation)) {
-		shell_print(sh, "%s: no samples", topic->key_suffix);
+		shell_print(sh, "%s: no samples", topic->key);
 		return 0;
 	}
 
-	shell_print(sh, "%s gen=%u len=%u type=%s key=%s", topic->key_suffix,
-		    (unsigned int)generation, (unsigned int)len,
-		    topic->info != NULL ? topic->info->payload_type : "?",
+	shell_print(sh, "%s gen=%u len=%u type=%s key=%s", topic->key, (unsigned int)generation,
+		    (unsigned int)len, topic->info != NULL ? topic->info->payload_type : "?",
 		    topic->info != NULL ? topic->info->key : "?");
 	csyn_topic_print(sh, topic, g_csyn_shell_buf, len);
 
@@ -238,7 +237,7 @@ static void csyn_watch_thread(void *p0, void *p1, void *p2)
 				}
 
 				shell_print(watch.sh, "%s: %u samples in %lld ms = %0.2f Hz",
-					    watch.topic->key_suffix,
+					    watch.topic->key,
 					    (unsigned int)(generation_now - watch.last_generation),
 					    (long long)(now_ms - watch.last_ms),
 					    ((double)(generation_now - watch.last_generation) *
@@ -280,8 +279,8 @@ static int cmd_csyn_topic_list(const struct shell *sh, size_t argc, char **argv)
 			continue;
 		}
 
-		shell_print(sh, "%-24s %-10s %-2s %-5s gen=%u len=%u max=%u key=%s",
-			    topic->key_suffix, topic->info != NULL ? topic->info->encoding : "?",
+		shell_print(sh, "%-24s %-10s %-2s %-5s gen=%u len=%u max=%u key=%s", topic->key,
+			    topic->info != NULL ? topic->info->encoding : "?",
 			    topic->dir == CSYN_DIR_RX ? "rx" : "tx", available ? "live" : "empty",
 			    (unsigned int)generation, (unsigned int)len,
 			    (unsigned int)topic->max_size,
@@ -307,7 +306,7 @@ static int cmd_csyn_topic_info(const struct shell *sh, size_t argc, char **argv)
 		return -ENOENT;
 	}
 
-	shell_print(sh, "name=%s", topic->key_suffix);
+	shell_print(sh, "name=%s", topic->key);
 	shell_print(sh, "dir=%s", topic->dir == CSYN_DIR_RX ? "rx" : "tx");
 	shell_print(sh, "max_size=%u", (unsigned int)topic->max_size);
 	shell_print(sh, "generation=%u", (unsigned int)csyn_topic_generation(topic));
@@ -347,7 +346,7 @@ static int cmd_csyn_topic_echo(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_ECHO, period_ms);
-	shell_print(sh, "echoing %s every %u ms; use 'csyn topic stop' to stop", topic->key_suffix,
+	shell_print(sh, "echoing %s every %u ms; use 'csyn topic stop' to stop", topic->key,
 		    (unsigned int)period_ms);
 
 	return 0;
@@ -373,8 +372,8 @@ static int cmd_csyn_topic_hz(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_HZ, period_ms);
-	shell_print(sh, "measuring %s every %u ms; use 'csyn topic stop' to stop",
-		    topic->key_suffix, (unsigned int)period_ms);
+	shell_print(sh, "measuring %s every %u ms; use 'csyn topic stop' to stop", topic->key,
+		    (unsigned int)period_ms);
 
 	return 0;
 }
@@ -399,7 +398,7 @@ static int cmd_csyn_topic_watch(const struct shell *sh, size_t argc, char **argv
 	}
 
 	csyn_watch_start(sh, topic, CSYN_WATCH_LINE, period_ms);
-	shell_print(sh, "watching %s every %u ms; use 'csyn topic stop' to stop", topic->key_suffix,
+	shell_print(sh, "watching %s every %u ms; use 'csyn topic stop' to stop", topic->key,
 		    (unsigned int)period_ms);
 
 	return 0;

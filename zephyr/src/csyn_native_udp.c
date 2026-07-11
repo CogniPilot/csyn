@@ -147,8 +147,7 @@ static void rx_drain(void)
 			continue;
 		}
 
-		if (!logged_external_odometry_rx &&
-		    strcmp(topic->key_suffix, "external_odometry") == 0) {
+		if (!logged_external_odometry_rx && strcmp(topic->key, "external_pose") == 0) {
 			LOG_INF("csyn udp external_odometry rx id=%u payload_len=%u",
 				(unsigned int)catalog_id, (unsigned int)payload_len);
 			logged_external_odometry_rx = true;

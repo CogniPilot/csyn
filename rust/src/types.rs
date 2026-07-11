@@ -38,7 +38,7 @@ impl TopicType {
             .iter()
             .find(|topic| {
                 topic.name.eq_ignore_ascii_case(name)
-                    || topic.key_suffix == name
+                    || topic.key == name
                     || topic.root_table.eq_ignore_ascii_case(name)
             })
             .map(Self::from_topic)
@@ -92,7 +92,7 @@ pub fn subscribe_keyexpr(arg: &str) -> String {
         return arg.to_string();
     }
     match TopicType::find(arg) {
-        Some(known) => format!("**/{}/**", known.topic.key_suffix),
+        Some(known) => format!("**/{}/**", known.topic.key),
         None => arg.to_string(),
     }
 }
@@ -114,25 +114,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_topics_by_name_suffix_and_wire_type() {
+    fn finds_topics_by_name_key_and_wire_type() {
         assert!(TopicType::find("VehicleHealth").is_some());
-        assert!(TopicType::find("vehicle_health").is_some());
+        assert!(TopicType::find("health").is_some());
         assert!(TopicType::find("synapse.topic.VehicleHealthData").is_some());
         assert!(TopicType::find("no_such_topic").is_none());
     }
 
     #[test]
     fn infers_topics_from_key_expressions() {
-        let known = TopicType::infer("cub1/synapse/v1/topic/attitude_estimate").unwrap();
+        let known = TopicType::infer("cub1/att").unwrap();
         assert_eq!(known.topic.name, "AttitudeEstimate");
         assert_eq!(known.schema.file, known.topic.schema_file);
     }
 
     #[test]
     fn expands_bare_names_to_key_expressions() {
-        assert_eq!(subscribe_keyexpr("vehicle_health"), "**/vehicle_health/**");
+        assert_eq!(subscribe_keyexpr("VehicleHealth"), "**/health/**");
         assert_eq!(subscribe_keyexpr("a/b/**"), "a/b/**");
-        assert!(publish_key("vehicle_health").ends_with("/vehicle_health"));
+        assert_eq!(publish_key("VehicleHealth"), "health");
     }
 
     #[test]

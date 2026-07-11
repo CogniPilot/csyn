@@ -28,23 +28,23 @@ CSYN_SLOTS(g_attitude_estimate_slots, sizeof(synapse_topic_AttitudeEstimateData_
 CSYN_SLOTS(g_attitude_command_slots, sizeof(synapse_topic_AttitudeCommandData_t));
 CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetricsData_t));
 
-#define CSYN_TOPIC(_suffix, _dir, _slots)                                                          \
+#define CSYN_TOPIC(_key, _dir, _slots)                                                             \
 	{                                                                                          \
-		.key_suffix = _suffix,                                                             \
+		.key = _key,                                                                       \
 		.dir = _dir,                                                                       \
 		.slots = _slots,                                                                   \
 		.max_size = sizeof(_slots) / 2U,                                                   \
 	}
 
 static struct csyn_topic g_topics[] = {
-	CSYN_TOPIC("manual_control_command", CSYN_DIR_RX, g_manual_control_slots),
-	CSYN_TOPIC("inertial_sample", CSYN_DIR_RX, g_inertial_sample_slots),
-	CSYN_TOPIC("external_odometry", CSYN_DIR_RX, g_external_odometry_slots),
-	CSYN_TOPIC("pwm_signal_outputs", CSYN_DIR_TX, g_pwm_signal_outputs_slots),
-	CSYN_TOPIC("vehicle_health", CSYN_DIR_TX, g_vehicle_health_slots),
-	CSYN_TOPIC("attitude_estimate", CSYN_DIR_TX, g_attitude_estimate_slots),
-	CSYN_TOPIC("attitude_command", CSYN_DIR_TX, g_attitude_command_slots),
-	CSYN_TOPIC("control_loop_metrics", CSYN_DIR_TX, g_control_loop_metrics_slots),
+	CSYN_TOPIC("manual", CSYN_DIR_RX, g_manual_control_slots),
+	CSYN_TOPIC("imu", CSYN_DIR_RX, g_inertial_sample_slots),
+	CSYN_TOPIC("external_pose", CSYN_DIR_RX, g_external_odometry_slots),
+	CSYN_TOPIC("pwm", CSYN_DIR_TX, g_pwm_signal_outputs_slots),
+	CSYN_TOPIC("health", CSYN_DIR_TX, g_vehicle_health_slots),
+	CSYN_TOPIC("att", CSYN_DIR_TX, g_attitude_estimate_slots),
+	CSYN_TOPIC("att_sp", CSYN_DIR_TX, g_attitude_command_slots),
+	CSYN_TOPIC("loop", CSYN_DIR_TX, g_control_loop_metrics_slots),
 };
 
 size_t csyn_topic_count(void)
@@ -70,7 +70,7 @@ struct csyn_topic *csyn_topic_find(const char *name)
 	for (size_t i = 0U; i < ARRAY_SIZE(g_topics); i++) {
 		struct csyn_topic *topic = &g_topics[i];
 
-		if (strcmp(name, topic->key_suffix) == 0 ||
+		if (strcmp(name, topic->key) == 0 ||
 		    (topic->info != NULL && (strcmp(name, topic->info->name) == 0 ||
 					     strcmp(name, topic->info->key) == 0))) {
 			return topic;
@@ -161,19 +161,19 @@ static int csyn_init(void)
 		struct csyn_topic *topic = &g_topics[i];
 
 		for (size_t j = 0U; j < synapse_topics_count; j++) {
-			if (strcmp(synapse_topics[j].key_suffix, topic->key_suffix) == 0) {
+			if (strcmp(synapse_topics[j].key, topic->key) == 0) {
 				topic->info = &synapse_topics[j];
 				break;
 			}
 		}
 
 		if (topic->info == NULL) {
-			LOG_ERR("topic %s missing from synapse catalog", topic->key_suffix);
+			LOG_ERR("topic %s missing from synapse catalog", topic->key);
 			return -EINVAL;
 		}
 
 		if (topic->info->fixed_layout && topic->info->payload_size != topic->max_size) {
-			LOG_ERR("topic %s size mismatch: catalog %u local %u", topic->key_suffix,
+			LOG_ERR("topic %s size mismatch: catalog %u local %u", topic->key,
 				(unsigned int)topic->info->payload_size,
 				(unsigned int)topic->max_size);
 			return -EINVAL;

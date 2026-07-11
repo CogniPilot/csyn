@@ -11,11 +11,11 @@ set(CSYN_DIR ${CMAKE_CURRENT_LIST_DIR})
 # ids, keyexprs, payload layouts, and the generated topic printer for every
 # csyn consumer.
 set(CSYN_SYNAPSE_FBS_C_URL
-  "https://github.com/CogniPilot/synapse_fbs/releases/download/v0.5.0/synapse_fbs-c.tar.gz"
+  "https://github.com/CogniPilot/synapse_fbs/releases/download/v0.6.0/synapse_fbs-c.tar.gz"
   CACHE STRING "URL for the generated synapse_fbs C archive"
 )
 set(CSYN_SYNAPSE_FBS_C_URL_HASH
-  "SHA256=282ff10c36204318b5cf9aef1d4fc96e68d4e0acc715530f0cf87a0f5f72d8d6"
+  "SHA256=b9a25c3b4b8105934023c86597d925272aca2c14b07ebf710760fa4928780991"
   CACHE STRING "CMake URL_HASH for the generated synapse_fbs C archive"
 )
 string(REGEX MATCH "/v([0-9]+\\.[0-9]+\\.[0-9]+)/" _csyn_synapse_fbs_match

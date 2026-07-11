@@ -52,7 +52,7 @@ static synapse_topic_ExternalOdometryData_t g_external_odometry;
  */
 struct bridge_tx_map {
 	struct zros_topic *zros;
-	const char *csyn_suffix;
+	const char *csyn_name;
 	void *msg;
 	size_t msg_size;
 	struct csyn_topic *csyn;
@@ -66,12 +66,11 @@ static synapse_topic_AttitudeCommandData_t g_att_cmd_msg;
 static synapse_topic_ControlLoopMetricsData_t g_metrics_msg;
 
 static struct bridge_tx_map g_tx_maps[] = {
-	{&topic_pwm_signal_outputs, "pwm_signal_outputs", &g_pwm_msg, sizeof(g_pwm_msg)},
-	{&topic_vehicle_health, "vehicle_health", &g_health_msg, sizeof(g_health_msg)},
-	{&topic_attitude_estimate, "attitude_estimate", &g_att_est_msg, sizeof(g_att_est_msg)},
-	{&topic_attitude_command, "attitude_command", &g_att_cmd_msg, sizeof(g_att_cmd_msg)},
-	{&topic_control_loop_metrics, "control_loop_metrics", &g_metrics_msg,
-	 sizeof(g_metrics_msg)},
+	{&topic_pwm_signal_outputs, "PwmSignalOutputs", &g_pwm_msg, sizeof(g_pwm_msg)},
+	{&topic_vehicle_health, "VehicleHealth", &g_health_msg, sizeof(g_health_msg)},
+	{&topic_attitude_estimate, "AttitudeEstimate", &g_att_est_msg, sizeof(g_att_est_msg)},
+	{&topic_attitude_command, "AttitudeCommand", &g_att_cmd_msg, sizeof(g_att_cmd_msg)},
+	{&topic_control_loop_metrics, "ControlLoopMetrics", &g_metrics_msg, sizeof(g_metrics_msg)},
 };
 
 static bool copy_csyn_topic(struct csyn_topic *topic, uint8_t *buf, size_t buf_size, size_t *len,
@@ -176,9 +175,9 @@ static void mirror_tx_if_updated(struct bridge_tx_map *map)
 
 static void bridge_thread(void *arg0, void *arg1, void *arg2)
 {
-	struct csyn_topic *manual_topic = csyn_topic_find("manual_control_command");
-	struct csyn_topic *inertial_topic = csyn_topic_find("inertial_sample");
-	struct csyn_topic *external_odometry_topic = csyn_topic_find("external_odometry");
+	struct csyn_topic *manual_topic = csyn_topic_find("ManualControlCommand");
+	struct csyn_topic *inertial_topic = csyn_topic_find("InertialSample");
+	struct csyn_topic *external_odometry_topic = csyn_topic_find("ExternalOdometry");
 	uint32_t last_manual_generation = 0U;
 	uint32_t last_inertial_generation = 0U;
 	uint32_t last_external_odometry_generation = 0U;
@@ -204,9 +203,9 @@ static int bridge_init(void)
 	int rc;
 
 	for (size_t i = 0U; i < ARRAY_SIZE(g_tx_maps); i++) {
-		g_tx_maps[i].csyn = csyn_topic_find(g_tx_maps[i].csyn_suffix);
+		g_tx_maps[i].csyn = csyn_topic_find(g_tx_maps[i].csyn_name);
 		if (g_tx_maps[i].csyn == NULL) {
-			LOG_ERR("csyn topic %s not registered", g_tx_maps[i].csyn_suffix);
+			LOG_ERR("csyn topic %s not registered", g_tx_maps[i].csyn_name);
 			return -EINVAL;
 		}
 	}

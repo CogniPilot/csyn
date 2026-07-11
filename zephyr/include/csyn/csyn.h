@@ -21,7 +21,7 @@ enum csyn_dir {
  * synapse_fbs release.
  */
 struct csyn_topic {
-	const char *key_suffix;
+	const char *key; /* canonical synapse_fbs short key */
 	const synapse_topic_info_t *info;
 	enum csyn_dir dir;
 	uint8_t *slots;
