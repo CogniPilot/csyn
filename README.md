@@ -28,6 +28,10 @@ fingerprint (truncated SHA-256). The Rust CLI and Zephyr transport refuse
 metadata-free or mismatched samples and throttle repeated warnings to once per
 topic every ten seconds.
 
+Check the compiled schema release with `csyn --version` or `csyn build-info`
+on the host. On the Zephyr shell, `csyn status` prints the pinned
+`synapse_fbs` release compiled into the module.
+
 ## Zephyr module
 
 Add csyn to your west manifest:
@@ -70,7 +74,7 @@ Layout (everything for the module lives under `zephyr/`):
 - `zephyr/include/csyn/csyn_codec.h` — payload decode/encode plus PWM/axis
   and quaternion/euler helpers
 - `zephyr/include/csyn/csyn_types.h` — plain in-process types (rc channels,
-  mocap rigid body, manual control)
+  manual control)
 - `zephyr/include/csyn/csyn_zros.h` — zros topic declarations vehicles use
 - `zephyr/src/` — store, codec, bridge, shell, and transports
 - `zephyr/{module.yml,Kconfig,CMakeLists.txt}` — west integration and the
@@ -89,6 +93,9 @@ Bags are standard MCAP files whose schema records carry the embedded
 synapse_fbs binary schemas, so recordings are self-describing for any MCAP
 tool. The legacy `.csynbag` format is retired.
 
+The CLI uses the published `synapse_fbs` crate matching the Zephyr module's
+pinned C release asset.
+
 ## Testing
 
 CI runs entirely on hosted GitHub runners with no hardware: twister builds
@@ -98,10 +105,61 @@ Formatting is enforced with the Zephyr `.clang-format` and rustfmt. Board
 targets may be added to `platform_allow` for optional local twister runs,
 but must stay out of `integration_platforms` so CI never needs hardware.
 
+The Nix flake provides host tools only; Zephyr and zros revisions still come
+from `west.yml`. Enter the development shell from the csyn repo root with:
+
 ```sh
-west twister -T zephyr/tests -p native_sim --inline-logs   # Zephyr module
-cd rust && cargo test                                      # host CLI
+nix develop
 ```
+
+Inside that shell, the normal host tools are available:
+
+```sh
+cargo test --locked --manifest-path rust/Cargo.toml
+clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
+west --version
+```
+
+You can also run host checks without entering a shell:
+
+```sh
+nix develop -c cargo fmt --check --manifest-path rust/Cargo.toml
+nix develop -c clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
+nix develop -c cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+nix develop -c cargo test --locked --manifest-path rust/Cargo.toml
+```
+
+Run Twister from an existing west workspace with:
+
+```sh
+nix develop -c west twister -T zephyr/tests -v --inline-logs --integration
+```
+
+For a fresh Zephyr workspace, keep csyn checked out at `modules/lib/csyn`,
+then initialize and update west from the workspace root:
+
+```sh
+mkdir -p .west
+printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
+nix develop ./modules/lib/csyn -c west update
+nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/scripts/twister -T modules/lib/csyn/zephyr/tests -v --inline-logs --integration
+```
+
+## Releases
+
+GitHub Actions publishes the Rust CLI crate to crates.io when a tag matching
+`vMAJOR.MINOR.PATCH` is pushed. The tag version must match
+`rust/Cargo.toml`, so a release for version `0.3.0` is:
+
+```sh
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
+and a `cargo publish --dry-run` before publishing. crates.io Trusted Publishing
+is configured for the `CogniPilot/csyn` repository and the `release.yml`
+workflow, so no repository publish secret is required.
 
 ## License
 

@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use serde::Serialize;
 use zenoh::Wait;
 
@@ -33,14 +33,40 @@ use crate::zenoh_util::open_session;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.version {
+        print_version();
+        return Ok(());
+    }
+
+    let command = match cli.command {
+        Some(command) => command,
+        None => {
+            Cli::command().print_help()?;
+            println!();
+            return Ok(());
+        }
+    };
+    let connect = cli.zenoh.connect;
     let shutdown = shutdown_flag()?;
 
-    match cli.command {
-        Command::Topic(command) => run_topic(cli.zenoh.connect, command, shutdown),
+    match command {
+        Command::BuildInfo => {
+            print_version();
+            Ok(())
+        }
+        Command::Topic(command) => run_topic(connect, command, shutdown),
         Command::Type(command) => run_type(command),
-        Command::Bag(command) => run_bag(cli.zenoh.connect, command, shutdown),
-        Command::Graph(command) => run_graph(cli.zenoh.connect, command, shutdown),
+        Command::Bag(command) => run_bag(connect, command, shutdown),
+        Command::Graph(command) => run_graph(connect, command, shutdown),
     }
+}
+
+fn print_version() {
+    println!(
+        "csyn {} (synapse_fbs {})",
+        env!("CARGO_PKG_VERSION"),
+        synapse_fbs::VERSION
+    );
 }
 
 fn run_graph(connect: String, command: GraphCommand, shutdown: Arc<AtomicBool>) -> Result<()> {
@@ -156,9 +182,12 @@ fn topic_echo(
     let mut warnings = ContractWarningThrottle::default();
 
     while !shutdown.load(Ordering::Relaxed) {
-        let sample = subscriber
-            .recv()
-            .map_err(|error| anyhow!("failed to receive sample: {error}"))?;
+        let Some(sample) = subscriber
+            .recv_timeout(Duration::from_millis(100))
+            .map_err(|error| anyhow!("failed to receive sample: {error}"))?
+        else {
+            continue;
+        };
         let key = sample.key_expr().to_string();
         let payload = sample.payload().to_bytes().to_vec();
         let known_type = match require_value_type(&key, sample.encoding(), forced_type) {

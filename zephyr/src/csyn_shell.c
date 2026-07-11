@@ -4,6 +4,7 @@
 
 #include <csyn/csyn.h>
 #include <csyn/csyn_codec.h>
+#include <csyn/csyn_version.h>
 #include <synapse/topic_print.h>
 
 #include <errno.h>
@@ -91,22 +92,6 @@ static void print_hex(const struct shell *sh, const uint8_t *buf, size_t len)
 	}
 }
 
-static void print_mocap(const struct shell *sh, const uint8_t *buf, size_t len)
-{
-	csyn_mocap_rigid_body_t rb;
-
-	if (!csyn_decode_mocap_frame(buf, len, &rb)) {
-		shell_error(sh, "mocap: failed to decode MocapFrame rigid_bodies[0]");
-		print_hex(sh, buf, len);
-		return;
-	}
-
-	shell_print(sh, "mocap valid=%d pos=[%.3f %.3f %.3f]", rb.valid ? 1 : 0, (double)rb.x,
-		    (double)rb.y, (double)rb.z);
-	shell_print(sh, "mocap quat=[%.3f %.3f %.3f %.3f] id=%ld", (double)rb.qw, (double)rb.qx,
-		    (double)rb.qy, (double)rb.qz, (long)rb.id);
-}
-
 static void csyn_topic_print(const struct shell *sh, const struct csyn_topic *topic,
 			     const uint8_t *buf, size_t len)
 {
@@ -114,11 +99,6 @@ static void csyn_topic_print(const struct shell *sh, const struct csyn_topic *to
 	    synapse_topic_snprint(g_csyn_shell_line, sizeof(g_csyn_shell_line), topic->info->id,
 				  buf, len) >= 0) {
 		shell_print(sh, "%s", g_csyn_shell_line);
-		return;
-	}
-
-	if (strcmp(topic->key, "mocap") == 0) {
-		print_mocap(sh, buf, len);
 		return;
 	}
 
@@ -145,20 +125,6 @@ static void csyn_topic_line_once(const struct shell *sh, struct csyn_topic *topi
 				  len) >= 0) {
 		(void)snprintk(line, sizeof(line), "%s gen=%u %s", suffix, (unsigned int)generation,
 			       rendered);
-	} else if (strcmp(suffix, "mocap") == 0) {
-		csyn_mocap_rigid_body_t rb;
-
-		if (csyn_decode_mocap_frame(g_csyn_shell_buf, len, &rb)) {
-			(void)snprintk(line, sizeof(line),
-				       "%s gen=%u valid=%d pos=[%.2f %.2f %.2f] quat=[%.2f %.2f "
-				       "%.2f %.2f]",
-				       suffix, (unsigned int)generation, rb.valid ? 1 : 0,
-				       (double)rb.x, (double)rb.y, (double)rb.z, (double)rb.qw,
-				       (double)rb.qx, (double)rb.qy, (double)rb.qz);
-		} else {
-			(void)snprintk(line, sizeof(line), "%s gen=%u len=%u decode=failed", suffix,
-				       (unsigned int)generation, (unsigned int)len);
-		}
 	} else {
 		(void)snprintk(line, sizeof(line), "%s gen=%u len=%u name=%s", suffix,
 			       (unsigned int)generation, (unsigned int)len,
@@ -470,6 +436,7 @@ static int cmd_csyn_status(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 
 	shell_print(sh, "csyn: enabled");
+	shell_print(sh, "synapse_fbs: %s", CSYN_SYNAPSE_FBS_VERSION);
 	shell_print(sh, "catalog: %u synapse topics, %u registered",
 		    (unsigned int)synapse_topics_count, (unsigned int)csyn_topic_count());
 #if defined(CONFIG_CSYN_NATIVE_UDP)

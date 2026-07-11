@@ -1,9 +1,11 @@
 [package]
 name = "csyn"
-version = "0.2.0"
+version = "0.3.1"
 edition = "2024"
 description = "ROS-like Synapse CLI over Zenoh and FlatBuffers"
 license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/CogniPilot/csyn"
 
 # To build against a locally staged synapse_fbs crate before a release:
 #   cargo build --config 'patch.crates-io.synapse_fbs.path="<synapse_fbs>/target/xtask/packages/rust"'

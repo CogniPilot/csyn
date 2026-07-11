@@ -10,13 +10,16 @@
 #include <csyn/csyn_codec.h>
 
 #include <synapse/control_reader.h>
+#include <synapse/sensors_reader.h>
 #include <synapse/state_reader.h>
 #include <synapse/topic_catalog.h>
 
 /* csyn no longer ships a topic list: the application (here, the test)
  * declares the topics it carries and csyn resolves them at init. */
 CSYN_TOPIC_DEFINE(manual, "manual", CSYN_DIR_RX, sizeof(synapse_topic_ManualControlData_t));
-CSYN_TOPIC_DEFINE(mocap, "mocap", CSYN_DIR_RX, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
+CSYN_TOPIC_DEFINE(imu, "imu", CSYN_DIR_RX, sizeof(synapse_topic_InertialSampleData_t));
+CSYN_TOPIC_DEFINE(external_pose, "external_pose", CSYN_DIR_RX,
+		  sizeof(synapse_topic_ExternalOdometryData_t));
 CSYN_TOPIC_DEFINE(pwm, "pwm", CSYN_DIR_TX, sizeof(synapse_topic_PwmSignalOutputsData_t));
 CSYN_TOPIC_DEFINE(health, "health", CSYN_DIR_TX, sizeof(synapse_topic_VehicleHealthData_t));
 CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));

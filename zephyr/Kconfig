@@ -16,7 +16,7 @@ config CSYN_FLATBUFFER_MAX_SIZE
 	range 64 4096
 	help
 	  Fixed-layout struct topics size their store slots from the catalog.
-	  Flatbuffer topics (e.g. mocap_frame) have variable size and use
+	  Flatbuffer topics have variable size and use
 	  this bound instead.
 
 config CSYN_ZROS_BRIDGE
@@ -27,6 +27,12 @@ config CSYN_ZROS_BRIDGE
 	  Mirror csyn topics onto the in-process zros bus: inbound topics are
 	  decoded and published to zros, outbound fixed-layout topics are
 	  copied from zros to the csyn store for the active transport.
+
+config CSYN_ZROS_BRIDGE_EXTERNAL_TX_TOPICS
+	bool
+	help
+	  Use outbound zros topic storage defined by the application. When disabled,
+	  the bridge defines the outbound topics it mirrors into the csyn transport.
 
 config CSYN_SHELL
 	bool "Enable csyn shell diagnostics"
@@ -79,7 +85,9 @@ config CSYN_NATIVE_UDP_THREAD_PRIORITY
 
 config CSYN_ZENOH
 	bool "Enable csyn Zenoh transport"
-	depends on NETWORKING && NET_UDP && POSIX_API
+	depends on NETWORKING || BOARD_NATIVE_SIM
+	depends on NET_UDP || BOARD_NATIVE_SIM
+	depends on POSIX_API || BOARD_NATIVE_SIM
 	select ZENOH_PICO
 	select ZENOH_PICO_MULTI_THREAD
 	select ZENOH_PICO_PUBLICATION

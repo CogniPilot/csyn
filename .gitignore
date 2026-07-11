@@ -1,4 +1,5 @@
 /rust/target/
 /target/
+/twister-out*/
 *.csynbag
 *.jsonl

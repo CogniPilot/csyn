@@ -5,13 +5,14 @@
 #include <csyn/csyn_codec.h>
 
 #include <math.h>
-#include <stddef.h>
+#include <string.h>
 
 #include <zephyr/sys/util.h>
 
-#include <synapse/mocap_reader.h>
+#include <synapse/state_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
+BUILD_ASSERT(sizeof(synapse_topic_ExternalOdometryData_t) == 64U);
 BUILD_ASSERT(sizeof(synapse_topic_PwmSignalOutputsData_t) == 48U);
 BUILD_ASSERT(sizeof(csyn_rc_channels16_t) == 64U);
 BUILD_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
@@ -49,92 +50,6 @@ void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll,
 	*roll = atan2f(sinr_cosp, cosr_cosp);
 	*pitch = asinf(csyn_clampf(sinp, -1.0f, 1.0f));
 	*yaw = atan2f(siny_cosp, cosy_cosp);
-}
-
-/* Shepperd's method: branch on the largest quaternion component so the
- * square root argument stays well away from zero. */
-void csyn_quatf_from_rotation(const synapse_types_RotationMatrix3f_t *rotation,
-			      synapse_types_Quaternionf_t *quat)
-{
-	float r11 = rotation->r11;
-	float r22 = rotation->r22;
-	float r33 = rotation->r33;
-	float trace = r11 + r22 + r33;
-	float s;
-
-	if (trace > 0.0f) {
-		s = sqrtf(trace + 1.0f);
-		quat->w = 0.5f * s;
-		s = 0.5f / s;
-		quat->x = (rotation->r32 - rotation->r23) * s;
-		quat->y = (rotation->r13 - rotation->r31) * s;
-		quat->z = (rotation->r21 - rotation->r12) * s;
-	} else if (r11 >= r22 && r11 >= r33) {
-		s = sqrtf(1.0f + r11 - r22 - r33);
-		quat->x = 0.5f * s;
-		s = 0.5f / s;
-		quat->w = (rotation->r32 - rotation->r23) * s;
-		quat->y = (rotation->r12 + rotation->r21) * s;
-		quat->z = (rotation->r13 + rotation->r31) * s;
-	} else if (r22 >= r33) {
-		s = sqrtf(1.0f - r11 + r22 - r33);
-		quat->y = 0.5f * s;
-		s = 0.5f / s;
-		quat->w = (rotation->r13 - rotation->r31) * s;
-		quat->x = (rotation->r12 + rotation->r21) * s;
-		quat->z = (rotation->r23 + rotation->r32) * s;
-	} else {
-		s = sqrtf(1.0f - r11 - r22 + r33);
-		quat->z = 0.5f * s;
-		s = 0.5f / s;
-		quat->w = (rotation->r21 - rotation->r12) * s;
-		quat->x = (rotation->r13 + rotation->r31) * s;
-		quat->y = (rotation->r23 + rotation->r32) * s;
-	}
-}
-
-bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, struct csyn_mocap_rigid_body *rb)
-{
-	synapse_topic_MocapFrame_table_t frame;
-	synapse_topic_MocapRigidBodyData_vec_t bodies;
-	synapse_topic_MocapRigidBodyData_struct_t body;
-	synapse_types_Vec3f_struct_t position;
-	synapse_types_RotationMatrix3f_struct_t rotation;
-	synapse_types_Quaternionf_t attitude;
-
-	if (buf == NULL || rb == NULL || buf_size < 8U) {
-		return false;
-	}
-
-	frame = synapse_topic_MocapFrame_as_root(buf);
-	if (frame == NULL) {
-		return false;
-	}
-
-	bodies = synapse_topic_MocapFrame_rigid_bodies(frame);
-	if (bodies == NULL || synapse_topic_MocapRigidBodyData_vec_len(bodies) == 0U) {
-		return false;
-	}
-
-	body = synapse_topic_MocapRigidBodyData_vec_at(bodies, 0);
-	position = synapse_topic_MocapRigidBodyData_position_enu_m(body);
-	rotation = synapse_topic_MocapRigidBodyData_rotation(body);
-	csyn_quatf_from_rotation(rotation, &attitude);
-
-	*rb = (struct csyn_mocap_rigid_body){
-		.id = synapse_topic_MocapRigidBodyData_id(body),
-		.x = position->x,
-		.y = position->y,
-		.z = position->z,
-		.qw = attitude.w,
-		.qx = attitude.x,
-		.qy = attitude.y,
-		.qz = attitude.z,
-		.valid = (synapse_topic_MocapRigidBodyData_flags(body) &
-			  synapse_topic_MocapRawFlags_Valid) != 0U,
-	};
-
-	return true;
 }
 
 static float milli_to_axis(int16_t value, float min_value, float max_value)
