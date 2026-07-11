@@ -153,14 +153,13 @@ static const synapse_topic_info_t g_vehicle_command_info = {
 static int csyn_init(void)
 {
 	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
-		for (size_t j = 0U; j < synapse_topics_count; j++) {
-			if (strcmp(synapse_topics[j].key, topic->key) == 0) {
-				topic->info = &synapse_topics[j];
-				break;
-			}
-		}
+		const char *key_segment;
 
-		if (topic->info == NULL && strcmp(topic->key, "vehicle_command") == 0) {
+		topic->info = synapse_topic_by_key(topic->key);
+		key_segment = strrchr(topic->key, '/');
+		key_segment = key_segment != NULL ? key_segment + 1 : topic->key;
+
+		if (topic->info == NULL && strcmp(key_segment, "vehicle_command") == 0) {
 			topic->info = &g_vehicle_command_info;
 		}
 

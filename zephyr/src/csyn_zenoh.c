@@ -58,9 +58,8 @@ bool csyn_zenoh_register_queryable(const char *key, csyn_query_handler_t handler
 	return true;
 }
 
-/* Every catalog topic this node carries publishes and subscribes as
- * [<namespace>/]<key> per the synapse key grammar; CONFIG_CSYN_NAMESPACE
- * scopes the whole node, e.g. "cub1".
+/* CONFIG_CSYN_NAMESPACE scopes queryable services. Topic keys are declared
+ * explicitly by each vehicle with CSYN_TOPIC_DEFINE().
  */
 static int key_with_namespace(const char *key, char *out, size_t out_size)
 {
@@ -78,9 +77,16 @@ static int key_with_namespace(const char *key, char *out, size_t out_size)
 	return 0;
 }
 
-static int topic_keyexpr(const synapse_topic_info_t *info, char *out, size_t out_size)
+static int topic_keyexpr(const struct csyn_topic *topic, char *out, size_t out_size)
 {
-	return key_with_namespace(info->key, out, out_size);
+	int len;
+
+	if (strchr(topic->key, '/') == NULL) {
+		return key_with_namespace(topic->key, out, out_size);
+	}
+	len = snprintf(out, out_size, "%s", topic->key);
+
+	return len > 0 && (size_t)len < out_size ? 0 : -EINVAL;
 }
 
 static int value_contract(const synapse_topic_info_t *info, char *out, size_t out_size)
@@ -184,7 +190,7 @@ static bool key_contains(const char *key, size_t key_len, const char *needle)
 /* Mocap arbitration: the selected/ stream is the station's deliberate source
  * choice, so while it delivers plausible poses the fallback keys are ignored.
  */
-static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
+static void mocap_input_handler_common(z_loaned_sample_t *sample, void *arg, bool require_contract)
 {
 	struct csyn_topic *topic = arg;
 	z_bytes_reader_t reader;
@@ -199,6 +205,10 @@ static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
 	size_t key_len;
 	bool selected;
 	bool plausible;
+
+	if (require_contract && !sample_contract_matches(sample, topic)) {
+		return;
+	}
 
 	if (payload_len > MIN(sizeof(buf), (size_t)topic->max_size)) {
 		return;
@@ -227,6 +237,16 @@ static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
 	}
 
 	(void)csyn_topic_publish(topic, buf, payload_len);
+}
+
+static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
+{
+	mocap_input_handler_common(sample, arg, true);
+}
+
+static void legacy_mocap_input_handler(z_loaned_sample_t *sample, void *arg)
+{
+	mocap_input_handler_common(sample, arg, false);
 }
 
 static int config_init(z_owned_config_t *config)
@@ -273,7 +293,7 @@ static int declare_rx_key_subscriber(const z_loaned_session_t *session, const ch
 static int declare_rx_subscriber(const z_loaned_session_t *session, struct csyn_topic *topic)
 {
 	char key[CSYN_ZENOH_KEYEXPR_MAX];
-	int rc = topic_keyexpr(topic->info, key, sizeof(key));
+	int rc = topic_keyexpr(topic, key, sizeof(key));
 
 	if (rc < 0) {
 		return rc;
@@ -296,6 +316,24 @@ static int declare_rx_mocap_subscriber(const z_loaned_session_t *session, const 
 	}
 
 	z_closure(&callback, mocap_input_handler, NULL, topic);
+	return z_declare_background_subscriber(session, z_loan(view), z_move(callback), NULL);
+}
+
+static int declare_rx_legacy_mocap_subscriber(const z_loaned_session_t *session, const char *key,
+					      struct csyn_topic *topic)
+{
+	z_owned_closure_sample_t callback;
+	z_view_keyexpr_t view;
+	int rc;
+
+	z_internal_null(&callback);
+
+	rc = z_view_keyexpr_from_str(&view, key);
+	if (rc < 0) {
+		return rc;
+	}
+
+	z_closure(&callback, legacy_mocap_input_handler, NULL, topic);
 	return z_declare_background_subscriber(session, z_loan(view), z_move(callback), NULL);
 }
 
@@ -453,18 +491,17 @@ static int open_session(z_owned_session_t *session)
 		}
 
 		/* The frame stream is high-rate; only pull it off the network
-		 * when it is the selected mocap source. Mocap streams predate
-		 * the value-contract scheme (legacy compact poses carry no
-		 * metadata), so they use the arbitration handler instead of
-		 * the contract-enforcing one.
+		 * when it is the selected mocap source. The canonical 0.7 mocap
+		 * topic uses MocapPoseFrame and requires its value contract; the
+		 * separately configured legacy compact-pose key remains untyped.
 		 */
-		if (strcmp(topic->key, "mocap") == 0) {
+		if (strcmp(topic->info->key, "mocap") == 0) {
 			char key[CSYN_ZENOH_KEYEXPR_MAX];
 
 			if (!IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_FRAME)) {
 				continue;
 			}
-			rc = topic_keyexpr(topic->info, key, sizeof(key));
+			rc = topic_keyexpr(topic, key, sizeof(key));
 			if (rc == 0) {
 				rc = declare_rx_mocap_subscriber(z_loan(*session), key, topic);
 			}
@@ -485,32 +522,13 @@ static int open_session(z_owned_session_t *session)
 		struct csyn_topic *mocap = csyn_topic_find("mocap");
 
 		if (mocap != NULL) {
-			rc = declare_rx_mocap_subscriber(z_loan(*session),
-							 CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY, mocap);
+			rc = declare_rx_legacy_mocap_subscriber(
+				z_loan(*session), CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY, mocap);
 			if (rc < 0) {
 				z_drop(z_move(*session));
 				return rc;
 			}
 			LOG_INF("csyn zenoh mocap key %s", CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY);
-		}
-	}
-
-	/* Per-body estimator stream; subscribing also switches on the bridge's
-	 * demand-driven publisher for that body.
-	 */
-	if (CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY[0] != '\0') {
-		struct csyn_topic *odometry = csyn_topic_find("external_pose");
-
-		if (odometry != NULL) {
-			rc = declare_rx_key_subscriber(z_loan(*session),
-						       CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY,
-						       odometry);
-			if (rc < 0) {
-				z_drop(z_move(*session));
-				return rc;
-			}
-			LOG_INF("csyn zenoh external odometry key %s",
-				CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY);
 		}
 	}
 
@@ -526,7 +544,7 @@ static int open_session(z_owned_session_t *session)
 	return 0;
 }
 
-static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info_t *info,
+static int zenoh_put(const z_loaned_session_t *session, const struct csyn_topic *topic,
 		     const uint8_t *payload, size_t payload_len)
 {
 	char key[CSYN_ZENOH_KEYEXPR_MAX];
@@ -540,7 +558,7 @@ static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info
 	z_internal_null(&bytes);
 	z_internal_null(&encoding);
 
-	rc = topic_keyexpr(info, key, sizeof(key));
+	rc = topic_keyexpr(topic, key, sizeof(key));
 	if (rc < 0) {
 		return rc;
 	}
@@ -554,7 +572,7 @@ static int zenoh_put(const z_loaned_session_t *session, const synapse_topic_info
 	if (rc < 0) {
 		return rc;
 	}
-	rc = value_contract(info, contract, sizeof(contract));
+	rc = value_contract(topic->info, contract, sizeof(contract));
 	if (rc <= 0 || (size_t)rc >= sizeof(contract)) {
 		z_drop(z_move(bytes));
 		return -EINVAL;
@@ -585,7 +603,7 @@ static void put_topic_if_updated(const z_loaned_session_t *session, struct csyn_
 		return;
 	}
 
-	if (zenoh_put(session, topic->info, buf, len) == 0) {
+	if (zenoh_put(session, topic, buf, len) == 0) {
 		*last_generation = generation;
 	}
 }

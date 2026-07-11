@@ -109,7 +109,7 @@ static int destination_init(struct sockaddr_in *addr)
 static void rx_drain(void)
 {
 	uint8_t buf[CSYN_UDP_HEADER_SIZE + CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
-	static bool logged_external_odometry_rx;
+	static bool logged_odometry_rx;
 	static bool logged_unknown_rx;
 
 	while (true) {
@@ -147,10 +147,11 @@ static void rx_drain(void)
 			continue;
 		}
 
-		if (!logged_external_odometry_rx && strcmp(topic->key, "external_pose") == 0) {
-			LOG_INF("csyn udp external_pose rx id=%u payload_len=%u",
-				(unsigned int)catalog_id, (unsigned int)payload_len);
-			logged_external_odometry_rx = true;
+		if (!logged_odometry_rx && topic->info != NULL &&
+		    strcmp(topic->info->key, "odom") == 0) {
+			LOG_INF("csyn udp odom rx id=%u payload_len=%u", (unsigned int)catalog_id,
+				(unsigned int)payload_len);
+			logged_odometry_rx = true;
 		}
 		(void)csyn_topic_publish(topic, buf + CSYN_UDP_HEADER_SIZE, payload_len);
 	}

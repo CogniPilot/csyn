@@ -3,10 +3,10 @@ config CSYN
 	default y
 	help
 	  Enable the csyn topic store: a bounded, lock-free latest-sample
-	  store for synapse topics. Topic identity (name, keyexpr, payload
-	  type, encoding) is resolved from the generated synapse_fbs topic
-	  catalog, so the wire contract is pinned to the locked synapse_fbs
-	  release.
+	  store for synapse topics. Payload type, encoding, schema, and catalog
+	  id are resolved from the generated synapse_fbs catalog; vehicles
+	  declare deployment-specific wire keys. The wire contract is pinned
+	  to the locked synapse_fbs release.
 
 if CSYN
 
@@ -107,15 +107,16 @@ config CSYN_ZENOH_LOCATOR
 	default "udp/192.0.2.2:7447"
 
 config CSYN_NAMESPACE
-	string "Deployment namespace prepended to every csyn Zenoh key"
+	string "Default deployment namespace for bare csyn Zenoh keys"
 	depends on CSYN_ZENOH
 	default ""
 	help
-	  Optional deployment namespace, e.g. "cub1": every catalog topic
-	  publishes and subscribes as <namespace>/<key>, following the
-	  synapse key grammar [<namespace>/]<key>[/<instance>]. Multi-segment
-	  namespaces such as "lab/cub1" are allowed. Leave empty for the bare
-	  canonical keys; no leading or trailing slash.
+	  Optional deployment namespace, e.g. "cub1": topics declared with a
+	  bare catalog key publish and subscribe as <namespace>/<key>. A topic
+	  declared with a namespaced key such as vicon/cub1/odom uses that key
+	  verbatim. Queryable service keys always use this default namespace.
+	  Multi-segment namespaces such as "lab/cub1" are allowed; do not use
+	  leading or trailing slashes.
 
 choice CSYN_MOCAP_SOURCE
 	prompt "Stream feeding the zros mocap topic"
@@ -125,11 +126,10 @@ choice CSYN_MOCAP_SOURCE
 config CSYN_MOCAP_SOURCE_FRAME
 	bool "mocap topic rigid bodies"
 	help
-	  Decode the selected rigid body from synapse.topic.MocapFrame
-	  payloads: raw measurements, closest to the direct pose stream the
-	  controller was tuned against. Accepts both the FlatBuffers table
-	  published by synapse_qualisys_bridge >= 0.3.0 and the legacy
-	  28-byte compact pose.
+	  Decode the selected rigid body from synapse.topic.MocapPoseFrame
+	  payloads on the canonical mocap key: raw measurements, closest to
+	  the direct pose stream the controller was tuned against. Also accepts
+	  the legacy 28-byte compact pose on CSYN_ZENOH_MOCAP_POSE_KEY.
 
 config CSYN_MOCAP_SOURCE_POSE_KEY
 	bool "direct compact pose key"
@@ -138,11 +138,11 @@ config CSYN_MOCAP_SOURCE_POSE_KEY
 	  topic (legacy per-body compact pose stream, e.g. the electrode
 	  ground station republisher).
 
-config CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY
-	bool "external_pose estimator output"
+config CSYN_MOCAP_SOURCE_ODOMETRY
+	bool "odom estimator output"
 	help
-	  Derive the mocap pose from ExternalOdometryData payloads; set
-	  CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY to the bridge's per-body stream.
+	  Derive the mocap pose from the OdometryData topic declared by the
+	  vehicle with CSYN_TOPIC_DEFINE.
 	  The bridge estimator extrapolates through tracking gaps, so
 	  consumers tuned for raw poses will not see repeated/held samples
 	  during dropouts.
@@ -150,7 +150,7 @@ config CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY
 endchoice
 
 config CSYN_MOCAP_RIGID_BODY_ID
-	int "Rigid-body id selected from MocapFrame payloads"
+	int "Rigid-body id selected from MocapPoseFrame payloads"
 	depends on CSYN_ZROS_BRIDGE
 	default 0
 	help
@@ -166,15 +166,6 @@ config CSYN_ZENOH_MOCAP_SELECTED_HOLD_SAMPLES
 	int "Fallback mocap samples suppressed after each fresh selected/ pose"
 	depends on CSYN_ZENOH
 	default 48
-
-config CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY
-	string "Zenoh key of a per-body ExternalOdometryData stream"
-	depends on CSYN_ZENOH
-	default ""
-	help
-	  e.g. external_pose/1. Subscribing activates the bridge's
-	  demand-driven per-body publisher, so leave empty unless
-	  CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY consumes it.
 
 config CSYN_ZENOH_RETRY_MS
 	int "csyn Zenoh reconnect period in milliseconds"

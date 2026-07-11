@@ -11,11 +11,11 @@ set(CSYN_DIR ${CMAKE_CURRENT_LIST_DIR})
 # ids, keyexprs, payload layouts, and the generated topic printer for every
 # csyn consumer.
 set(CSYN_SYNAPSE_FBS_C_URL
-  "https://github.com/CogniPilot/synapse_fbs/releases/download/v0.6.0/synapse_fbs-c.tar.gz"
+  "https://github.com/CogniPilot/synapse_fbs/releases/download/v0.7.0/synapse_fbs-c.tar.gz"
   CACHE STRING "URL for the generated synapse_fbs C archive"
 )
 set(CSYN_SYNAPSE_FBS_C_URL_HASH
-  "SHA256=b9a25c3b4b8105934023c86597d925272aca2c14b07ebf710760fa4928780991"
+  "SHA256=cf552dde506372d746e0e96bbccfd245e9f15bf9841565a4b01a50e637b83cfe"
   CACHE STRING "CMake URL_HASH for the generated synapse_fbs C archive"
 )
 string(REGEX MATCH "/v([0-9]+\\.[0-9]+\\.[0-9]+)/" _csyn_synapse_fbs_match
@@ -51,6 +51,7 @@ zephyr_system_include_directories(${synapse_fbs_c_SOURCE_DIR}/include)
 zephyr_library_sources(
   ${CSYN_DIR}/src/csyn.c
   ${CSYN_DIR}/src/csyn_codec.c
+  ${synapse_fbs_c_SOURCE_DIR}/src/flatcc-runtime/verifier.c
 )
 
 zephyr_library_sources_ifdef(CONFIG_CSYN_ZROS_BRIDGE

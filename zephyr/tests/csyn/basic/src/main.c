@@ -18,10 +18,11 @@
 /* csyn no longer ships a topic list: the application (here, the test)
  * declares the topics it carries and csyn resolves them at init. */
 CSYN_TOPIC_DEFINE(manual, "manual", CSYN_DIR_RX, sizeof(synapse_topic_ManualControlData_t));
-CSYN_TOPIC_DEFINE(mocap, "mocap", CSYN_DIR_RX, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
+CSYN_TOPIC_DEFINE(mocap, "vicon/mocap", CSYN_DIR_RX, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
 CSYN_TOPIC_DEFINE(imu, "imu", CSYN_DIR_RX, sizeof(synapse_topic_InertialSampleData_t));
-CSYN_TOPIC_DEFINE(external_pose, "external_pose", CSYN_DIR_RX,
-		  sizeof(synapse_topic_ExternalOdometryData_t));
+CSYN_TOPIC_DEFINE(odom, "vicon/cub1/odom", CSYN_DIR_RX, sizeof(synapse_topic_OdometryData_t));
+CSYN_TOPIC_DEFINE(odom_cov, "vicon/cub1/odom_cov", CSYN_DIR_RX,
+		  sizeof(synapse_topic_OdometryWithCovarianceData_t));
 CSYN_TOPIC_DEFINE(pwm, "pwm", CSYN_DIR_TX, sizeof(synapse_topic_PwmSignalOutputsData_t));
 CSYN_TOPIC_DEFINE(health, "health", CSYN_DIR_TX, sizeof(synapse_topic_VehicleHealthData_t));
 CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));
@@ -35,6 +36,8 @@ CSYN_TOPIC_DEFINE(nav, "nav", CSYN_DIR_TX, sizeof(synapse_topic_NavigationTarget
 
 ZTEST(csyn_store, test_registry_resolves_catalog)
 {
+	struct csyn_topic *mocap = csyn_topic_find("mocap");
+
 	zassert_true(csyn_topic_count() > 0U);
 	zassert_is_null(csyn_topic_at(csyn_topic_count()));
 	zassert_is_null(csyn_topic_find("no_such_topic"));
@@ -54,6 +57,13 @@ ZTEST(csyn_store, test_registry_resolves_catalog)
 				      "%s slot size disagrees with catalog", topic->key);
 		}
 	}
+
+	zassert_not_null(mocap);
+	zassert_str_equal(mocap->key, "vicon/mocap");
+	zassert_str_equal(mocap->info->name, "MocapPoseFrame");
+	zassert_not_null(csyn_topic_find("vicon/cub1/odom"));
+	zassert_str_equal(synapse_topic_by_name("Odometry")->key, "odom");
+	zassert_str_equal(synapse_topic_by_name("OdometryWithCovariance")->key, "odom_cov");
 }
 
 ZTEST(csyn_store, test_publish_copy_generation)

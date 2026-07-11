@@ -151,6 +151,29 @@ mod tests {
     }
 
     #[test]
+    fn uses_the_0_7_topic_keys() {
+        assert_eq!(
+            TopicType::infer("qualisys/cub1/odom").unwrap().topic.name,
+            "Odometry"
+        );
+        assert_eq!(
+            TopicType::infer("qualisys/cub1/odom_cov")
+                .unwrap()
+                .topic
+                .name,
+            "OdometryWithCovariance"
+        );
+        assert_eq!(
+            TopicType::find("MocapPoseFrame").unwrap().topic.key,
+            "mocap"
+        );
+        assert_eq!(
+            TopicType::infer("qualisys/mocap").unwrap().topic.name,
+            "MocapPoseFrame"
+        );
+    }
+
+    #[test]
     fn requires_an_exact_zenoh_value_contract() {
         let known = TopicType::find("VehicleHealth").unwrap();
         let encoding = known.zenoh_encoding();

@@ -18,9 +18,10 @@ Both sides speak the synapse_fbs schema through a pinned release of the same
 version: the Zephyr module pins the C release tarball in
 `zephyr/CMakeLists.txt`, while the CLI pins the `synapse_fbs` crate, which
 embeds the schema sources, compiled binary schemas, topic catalog, and
-generated decoder. Every topic (name, keyexpr, payload type, encoding, catalog
-id) resolves from the generated catalog, so the wire contract is locked by csyn
-rather than per application and nothing is vendored.
+generated decoder. Every topic's type, encoding, schema, and catalog id resolve
+from the generated catalog; applications provide the deployment-specific wire
+key with `CSYN_TOPIC_DEFINE()`. The wire contract is locked by csyn rather than
+vendored per application.
 
 On Zenoh, every value must carry the canonical Synapse contract metadata: media
 type, fully qualified wire type, and that individual type's transitive schema
@@ -53,27 +54,42 @@ CONFIG_CSYN_ZROS_BRIDGE=y
 
 and pick a transport per board: `CONFIG_CSYN_ZENOH=y` (flight hardware) or
 `CONFIG_CSYN_NATIVE_UDP=y` (native_sim). `CONFIG_CSYN_NAMESPACE` optionally
-scopes every Zenoh key the node publishes and subscribes, e.g. `"cub1"`
-makes the attitude estimate publish on `cub1/att` per the synapse key
-grammar `[<namespace>/]<key>[/<instance>]`; the host CLI resolves
-namespaced keys without any configuration. Declare the topics your
+scopes bare topic keys, e.g. `"cub1"` makes an `"att"` declaration publish on
+`cub1/att`. Namespaced keys declared by the vehicle are used verbatim. Both
+forms follow the synapse grammar `[<namespace>/]<key>[/<instance>]`; the host
+CLI resolves namespaced keys without configuration. Declare the topics your
 application carries with `CSYN_TOPIC_DEFINE(symbol, key, dir, max_size)`;
-each key must be a canonical catalog key, and init fails on unknown keys or
-fixed-layout size mismatches:
+each key must end in a canonical catalog key, and init fails on unknown keys
+or fixed-layout size mismatches:
 
 ```c
 #include <csyn/csyn.h>
+#include <csyn/csyn_zros.h>
 
 CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));
 CSYN_TOPIC_DEFINE(manual, "manual", CSYN_DIR_RX, sizeof(synapse_topic_ManualControlData_t));
-CSYN_ZROS_TOPIC_DEFINE(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
-CSYN_ZROS_TOPIC_DEFINE(manual_control, struct csyn_manual_control);
+CSYN_TOPIC_DEFINE(mocap, "vicon/mocap", CSYN_DIR_RX, CONFIG_CSYN_FLATBUFFER_MAX_SIZE);
+CSYN_TOPIC_DEFINE(odom, "vicon/cub1/odom", CSYN_DIR_RX,
+		  sizeof(synapse_topic_OdometryData_t));
+CSYN_TOPIC_DEFINE(odom_cov, "vicon/cub1/odom_cov", CSYN_DIR_RX,
+		  sizeof(synapse_topic_OdometryWithCovarianceData_t));
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_estimate,
+				   synapse_topic_AttitudeEstimateData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(manual_control, struct csyn_manual_control);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mocap, struct csyn_mocap_rigid_body);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(odometry, synapse_topic_OdometryData_t);
 ```
 
-Each `CSYN_ZROS_TOPIC_DEFINE()` explicitly selects and allocates one topic in a
+Each native ZROS definition explicitly selects and allocates one topic in a
 vehicle-owned translation unit. Undeclared topics allocate no storage and are
-skipped by the bridge. CSyn only declares the topic interfaces and provides the
+skipped by the bridge. Csyn only declares the topic interfaces and provides the
 bridge functions.
+
+The macro key may be bare or namespaced. The final key segment selects the
+synapse_fbs 0.7 catalog type, while the complete declared key is used on the
+wire. Source-specific namespaces therefore stay in the vehicle configuration:
+the same firmware setup can use `vicon/cub1/odom`, `qualisys/cub1/odom`, or
+another deployment path without csyn hardcoding a mocap vendor.
 
 Applications publish and subscribe through the zros topics declared in
 `<csyn/csyn_zros.h>`; the bridge mirrors whichever bridged topics the

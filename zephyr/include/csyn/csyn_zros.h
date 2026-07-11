@@ -13,7 +13,7 @@
 ZROS_TOPIC_DECLARE(manual_control, struct csyn_manual_control);
 ZROS_TOPIC_DECLARE(mocap, struct csyn_mocap_rigid_body);
 ZROS_TOPIC_DECLARE(inertial_sample, synapse_topic_InertialSampleData_t);
-ZROS_TOPIC_DECLARE(external_odometry, synapse_topic_ExternalOdometryData_t);
+ZROS_TOPIC_DECLARE(odometry, synapse_topic_OdometryData_t);
 ZROS_TOPIC_DECLARE(pwm_signal_outputs, synapse_topic_PwmSignalOutputsData_t);
 ZROS_TOPIC_DECLARE(vehicle_health, synapse_topic_VehicleHealthData_t);
 ZROS_TOPIC_DECLARE(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
@@ -23,11 +23,6 @@ ZROS_TOPIC_DECLARE(mission_progress, synapse_topic_MissionProgressData_t);
 ZROS_TOPIC_DECLARE(local_position_command, synapse_topic_LocalPositionCommandData_t);
 ZROS_TOPIC_DECLARE(vehicle_command, struct csyn_vehicle_command);
 ZROS_TOPIC_DECLARE(navigation_target, synapse_topic_NavigationTargetData_t);
-
-/* Instantiate one explicitly selected topic in a vehicle translation unit.
- * CSyn owns no ZROS storage and the bridge skips every topic the vehicle does
- * not define. */
-#define CSYN_ZROS_TOPIC_DEFINE(_name, _type) ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(_name, _type)
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic);
 

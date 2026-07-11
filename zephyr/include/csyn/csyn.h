@@ -17,9 +17,9 @@ enum csyn_dir {
 
 /*
  * One registered synapse topic with a lock-free latest-sample store.
- * `info` resolves against the generated synapse topic catalog at init,
- * so name, keyexpr, payload type, and encoding always match the pinned
- * synapse_fbs release.
+ * `key` is the vehicle-declared deployment key. `info` resolves its final
+ * topic segment against the generated catalog at init, so payload type,
+ * encoding, schema, and id match the pinned synapse_fbs release.
  */
 struct csyn_topic {
 	const char *key;
@@ -35,10 +35,11 @@ struct csyn_topic {
 /*
  * Register one synapse topic in the application's topic list. csyn does not
  * define any topics itself: applications declare the topics they carry, and
- * the store, shell, and transports iterate whatever was declared. `_key` must
- * be a canonical catalog key; init fails on unknown keys or fixed-layout size
- * mismatches. `_max_size` bytes are reserved twice for the double-buffered
- * latest-sample store.
+ * the store, shell, and transports iterate whatever was declared. `_key` is
+ * the exact wire key and may include an arbitrary deployment namespace; its
+ * final topic segment must resolve through the synapse_fbs catalog. Init fails
+ * on unknown keys or fixed-layout size mismatches. `_max_size` bytes are
+ * reserved twice for the double-buffered latest-sample store.
  */
 #define CSYN_TOPIC_DEFINE(_name, _key, _dir, _max_size)                                            \
 	static uint8_t _csyn_slots_##_name[2U * (_max_size)];                                      \
@@ -68,9 +69,8 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic);
  * command's reply contract. CONFIG_CSYN_NAMESPACE applies to service keys
  * the same way it applies to topic keys.
  */
-typedef bool (*csyn_query_handler_t)(const uint8_t *request, size_t request_len,
-				     uint8_t *reply, size_t reply_capacity,
-				     size_t *reply_len, void *user);
+typedef bool (*csyn_query_handler_t)(const uint8_t *request, size_t request_len, uint8_t *reply,
+				     size_t reply_capacity, size_t *reply_len, void *user);
 
 /* Register before the Zenoh transport connects (normally from main). Returns
  * false when the key is invalid or the registry is full.

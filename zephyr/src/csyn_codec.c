@@ -11,6 +11,7 @@
 #include <zephyr/sys/util.h>
 
 #include <synapse/mocap_reader.h>
+#include <synapse/mocap_verifier.h>
 #include <synapse/state_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
@@ -88,45 +89,12 @@ static bool csyn_decode_compact_pose(const uint8_t *buf, struct csyn_mocap_rigid
 	return true;
 }
 
-/* Shepperd's method; rotation maps body FLU vectors into ENU, quat w first. */
-static void csyn_quatf_from_rotation(const synapse_types_RotationMatrix3f_t *r, float q[4])
-{
-	float trace = r->r11 + r->r22 + r->r33;
-	float s;
-
-	if (trace > 0.0f) {
-		s = sqrtf(trace + 1.0f) * 2.0f;
-		q[0] = 0.25f * s;
-		q[1] = (r->r32 - r->r23) / s;
-		q[2] = (r->r13 - r->r31) / s;
-		q[3] = (r->r21 - r->r12) / s;
-	} else if (r->r11 > r->r22 && r->r11 > r->r33) {
-		s = sqrtf(1.0f + r->r11 - r->r22 - r->r33) * 2.0f;
-		q[0] = (r->r32 - r->r23) / s;
-		q[1] = 0.25f * s;
-		q[2] = (r->r12 + r->r21) / s;
-		q[3] = (r->r13 + r->r31) / s;
-	} else if (r->r22 > r->r33) {
-		s = sqrtf(1.0f + r->r22 - r->r11 - r->r33) * 2.0f;
-		q[0] = (r->r13 - r->r31) / s;
-		q[1] = (r->r12 + r->r21) / s;
-		q[2] = 0.25f * s;
-		q[3] = (r->r23 + r->r32) / s;
-	} else {
-		s = sqrtf(1.0f + r->r33 - r->r11 - r->r22) * 2.0f;
-		q[0] = (r->r21 - r->r12) / s;
-		q[1] = (r->r13 + r->r31) / s;
-		q[2] = (r->r23 + r->r32) / s;
-		q[3] = 0.25f * s;
-	}
-}
-
 /* body_id selects a QTM 6D rigid body (1-based); 0 takes the frame's first. */
 bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, int32_t body_id,
 			     struct csyn_mocap_rigid_body *rb)
 {
-	synapse_topic_MocapFrame_table_t frame;
-	synapse_topic_MocapRigidBodyData_vec_t bodies;
+	synapse_topic_MocapPoseFrame_table_t frame;
+	synapse_topic_MocapRigidBodyPoseData_vec_t bodies;
 	size_t count;
 
 	if (buf == NULL || rb == NULL || buf_size < 8U) {
@@ -137,42 +105,46 @@ bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, int32_t body_i
 		return csyn_decode_compact_pose(buf, rb);
 	}
 
-	frame = synapse_topic_MocapFrame_as_root(buf);
+	if (synapse_topic_MocapPoseFrame_verify_as_root(buf, buf_size) != 0) {
+		return false;
+	}
+
+	frame = synapse_topic_MocapPoseFrame_as_root(buf);
 	if (frame == NULL) {
 		return false;
 	}
 
-	bodies = synapse_topic_MocapFrame_rigid_bodies(frame);
+	bodies = synapse_topic_MocapPoseFrame_rigid_bodies(frame);
 	if (bodies == NULL) {
 		return false;
 	}
 
-	count = synapse_topic_MocapRigidBodyData_vec_len(bodies);
+	count = synapse_topic_MocapRigidBodyPoseData_vec_len(bodies);
 	for (size_t i = 0U; i < count; i++) {
-		synapse_topic_MocapRigidBodyData_struct_t body =
-			synapse_topic_MocapRigidBodyData_vec_at(bodies, i);
+		synapse_topic_MocapRigidBodyPoseData_struct_t body =
+			synapse_topic_MocapRigidBodyPoseData_vec_at(bodies, i);
+		synapse_types_Posef_struct_t pose;
 		synapse_types_Vec3f_struct_t position;
-		synapse_types_RotationMatrix3f_struct_t rotation;
-		float q[4];
+		synapse_types_Quaternionf_struct_t attitude;
 
-		if (body_id > 0 && synapse_topic_MocapRigidBodyData_id(body) != body_id) {
+		if (body_id > 0 && synapse_topic_MocapRigidBodyPoseData_id(body) != body_id) {
 			continue;
 		}
 
-		position = synapse_topic_MocapRigidBodyData_position_enu_m(body);
-		rotation = synapse_topic_MocapRigidBodyData_rotation(body);
-		csyn_quatf_from_rotation(rotation, q);
+		pose = synapse_topic_MocapRigidBodyPoseData_pose(body);
+		position = synapse_types_Posef_position_enu_m(pose);
+		attitude = synapse_types_Posef_attitude(pose);
 
 		*rb = (struct csyn_mocap_rigid_body){
-			.id = synapse_topic_MocapRigidBodyData_id(body),
+			.id = synapse_topic_MocapRigidBodyPoseData_id(body),
 			.x = position->x,
 			.y = position->y,
 			.z = position->z,
-			.qw = q[0],
-			.qx = q[1],
-			.qy = q[2],
-			.qz = q[3],
-			.valid = (synapse_topic_MocapRigidBodyData_flags(body) &
+			.qw = attitude->w,
+			.qx = attitude->x,
+			.qy = attitude->y,
+			.qz = attitude->z,
+			.valid = (synapse_topic_MocapRigidBodyPoseData_flags(body) &
 				  synapse_topic_MocapRawFlags_Valid) != 0U,
 		};
 		return true;
