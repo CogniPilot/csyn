@@ -20,25 +20,28 @@
 
 LOG_MODULE_REGISTER(csyn_zros, LOG_LEVEL_INF);
 
-#if !defined(CONFIG_CSYN_ZROS_BRIDGE_EXTERNAL_TX_TOPICS)
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(pwm_signal_outputs, synapse_topic_PwmSignalOutputsData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_health, synapse_topic_VehicleHealthData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_command, synapse_topic_AttitudeCommandData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mission_progress, synapse_topic_MissionProgressData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(local_position_command,
-				   synapse_topic_LocalPositionCommandData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_command, struct csyn_vehicle_command);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(navigation_target, synapse_topic_NavigationTargetData_t);
-#endif
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(manual_control, struct csyn_manual_control);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mocap, struct csyn_mocap_rigid_body);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(inertial_sample, synapse_topic_InertialSampleData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(external_odometry, synapse_topic_ExternalOdometryData_t);
+/* Optional vehicle-owned storage. Undefined weak symbols resolve to NULL, so
+ * the bridge has no link-time or runtime dependency on undeclared topics. */
+#define CSYN_ZROS_WEAK_TOPIC(_name) extern struct zros_topic topic_##_name __attribute__((weak))
+CSYN_ZROS_WEAK_TOPIC(manual_control);
+CSYN_ZROS_WEAK_TOPIC(mocap);
+CSYN_ZROS_WEAK_TOPIC(inertial_sample);
+CSYN_ZROS_WEAK_TOPIC(external_odometry);
+CSYN_ZROS_WEAK_TOPIC(pwm_signal_outputs);
+CSYN_ZROS_WEAK_TOPIC(vehicle_health);
+CSYN_ZROS_WEAK_TOPIC(attitude_estimate);
+CSYN_ZROS_WEAK_TOPIC(attitude_command);
+CSYN_ZROS_WEAK_TOPIC(control_loop_metrics);
+CSYN_ZROS_WEAK_TOPIC(mission_progress);
+CSYN_ZROS_WEAK_TOPIC(local_position_command);
+CSYN_ZROS_WEAK_TOPIC(vehicle_command);
+CSYN_ZROS_WEAK_TOPIC(navigation_target);
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic)
 {
+	if (topic == NULL) {
+		return 0U;
+	}
 	return (uint32_t)atomic_get((atomic_t *)&topic->_lockless_generation);
 }
 
@@ -188,7 +191,7 @@ static void publish_external_odometry_if_updated(struct csyn_topic *topic,
 	}
 	(void)zros_pub_update(&g_external_odometry_pub);
 
-	if (IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY)) {
+	if (IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_EXTERNAL_ODOMETRY) && &topic_mocap != NULL) {
 		const uint32_t pose_valid = synapse_topic_ExternalOdometryFlags_PositionValid |
 					    synapse_topic_ExternalOdometryFlags_AttitudeValid;
 		uint32_t flags = g_external_odometry.flags;
@@ -224,9 +227,13 @@ static void publish_inertial_sample_if_updated(struct csyn_topic *topic, uint32_
 
 static void mirror_tx_if_updated(struct bridge_tx_map *map)
 {
-	uint32_t generation = csyn_zros_generation(map->zros);
+	uint32_t generation;
 
-	if (map->csyn == NULL || generation == 0U || generation == map->last_generation) {
+	if (map->zros == NULL || map->csyn == NULL) {
+		return;
+	}
+	generation = csyn_zros_generation(map->zros);
+	if (generation == 0U || generation == map->last_generation) {
 		return;
 	}
 
@@ -240,10 +247,13 @@ static void mirror_tx_if_updated(struct bridge_tx_map *map)
 
 static void bridge_thread(void *arg0, void *arg1, void *arg2)
 {
-	struct csyn_topic *manual_topic = csyn_topic_find("manual");
-	struct csyn_topic *mocap_topic = csyn_topic_find("mocap");
-	struct csyn_topic *inertial_topic = csyn_topic_find("imu");
-	struct csyn_topic *external_odometry_topic = csyn_topic_find("external_pose");
+	struct csyn_topic *manual_topic =
+		&topic_manual_control != NULL ? csyn_topic_find("manual") : NULL;
+	struct csyn_topic *mocap_topic = &topic_mocap != NULL ? csyn_topic_find("mocap") : NULL;
+	struct csyn_topic *inertial_topic =
+		&topic_inertial_sample != NULL ? csyn_topic_find("imu") : NULL;
+	struct csyn_topic *external_odometry_topic =
+		&topic_external_odometry != NULL ? csyn_topic_find("external_pose") : NULL;
 	uint32_t last_manual_generation = 0U;
 	uint32_t last_mocap_generation = 0U;
 	uint32_t last_inertial_generation = 0U;
@@ -269,38 +279,60 @@ static void bridge_thread(void *arg0, void *arg1, void *arg2)
 static int bridge_init(void)
 {
 	int rc;
+	bool has_topics = false;
 
 	/* The application owns the topic list; bridge only what it defined. */
 	for (size_t i = 0U; i < ARRAY_SIZE(g_tx_maps); i++) {
 		g_tx_maps[i].csyn = csyn_topic_find(g_tx_maps[i].csyn_key);
-		if (g_tx_maps[i].csyn == NULL) {
+		if (g_tx_maps[i].zros != NULL && g_tx_maps[i].csyn == NULL) {
 			LOG_WRN("csyn topic %s not registered; not bridged", g_tx_maps[i].csyn_key);
+		} else if (g_tx_maps[i].zros == NULL && g_tx_maps[i].csyn != NULL) {
+			LOG_WRN("zros storage for %s not defined; not bridged",
+				g_tx_maps[i].csyn_key);
+		} else if (g_tx_maps[i].zros != NULL) {
+			has_topics = true;
 		}
 	}
 
 	zros_node_init(&g_bridge_node, "csyn_zros");
 
-	rc = zros_pub_init(&g_manual_control_pub, &g_bridge_node, &topic_manual_control,
-			   &g_manual_control);
-	if (rc != 0) {
-		return rc;
+	if (&topic_manual_control != NULL && csyn_topic_find("manual") != NULL) {
+		rc = zros_pub_init(&g_manual_control_pub, &g_bridge_node, &topic_manual_control,
+				   &g_manual_control);
+		if (rc != 0) {
+			return rc;
+		}
+		has_topics = true;
 	}
 
-	rc = zros_pub_init(&g_mocap_pub, &g_bridge_node, &topic_mocap, &g_mocap);
-	if (rc != 0) {
-		return rc;
+	if (&topic_mocap != NULL && csyn_topic_find("mocap") != NULL) {
+		rc = zros_pub_init(&g_mocap_pub, &g_bridge_node, &topic_mocap, &g_mocap);
+		if (rc != 0) {
+			return rc;
+		}
+		has_topics = true;
 	}
 
-	rc = zros_pub_init(&g_inertial_sample_pub, &g_bridge_node, &topic_inertial_sample,
-			   &g_inertial_sample);
-	if (rc != 0) {
-		return rc;
+	if (&topic_inertial_sample != NULL && csyn_topic_find("imu") != NULL) {
+		rc = zros_pub_init(&g_inertial_sample_pub, &g_bridge_node, &topic_inertial_sample,
+				   &g_inertial_sample);
+		if (rc != 0) {
+			return rc;
+		}
+		has_topics = true;
 	}
 
-	rc = zros_pub_init(&g_external_odometry_pub, &g_bridge_node, &topic_external_odometry,
-			   &g_external_odometry);
-	if (rc != 0) {
-		return rc;
+	if (&topic_external_odometry != NULL && csyn_topic_find("external_pose") != NULL) {
+		rc = zros_pub_init(&g_external_odometry_pub, &g_bridge_node,
+				   &topic_external_odometry, &g_external_odometry);
+		if (rc != 0) {
+			return rc;
+		}
+		has_topics = true;
+	}
+
+	if (!has_topics) {
+		return 0;
 	}
 
 	k_thread_create(&g_bridge_thread, g_bridge_stack, K_THREAD_STACK_SIZEOF(g_bridge_stack),

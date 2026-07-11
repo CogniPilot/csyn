@@ -24,6 +24,11 @@ ZROS_TOPIC_DECLARE(local_position_command, synapse_topic_LocalPositionCommandDat
 ZROS_TOPIC_DECLARE(vehicle_command, struct csyn_vehicle_command);
 ZROS_TOPIC_DECLARE(navigation_target, synapse_topic_NavigationTargetData_t);
 
+/* Instantiate one explicitly selected topic in a vehicle translation unit.
+ * CSyn owns no ZROS storage and the bridge skips every topic the vehicle does
+ * not define. */
+#define CSYN_ZROS_TOPIC_DEFINE(_name, _type) ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(_name, _type)
+
 uint32_t csyn_zros_generation(const struct zros_topic *topic);
 
 #endif
