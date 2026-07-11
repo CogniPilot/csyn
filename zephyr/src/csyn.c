@@ -3,6 +3,7 @@
  */
 
 #include <csyn/csyn.h>
+#include <csyn/csyn_types.h>
 
 #include <errno.h>
 #include <string.h>
@@ -41,7 +42,8 @@ struct csyn_topic *csyn_topic_find(const char *name)
 
 	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
 		if (strcmp(name, topic->key) == 0 ||
-		    (topic->info != NULL && strcmp(name, topic->info->name) == 0)) {
+		    (topic->info != NULL && (strcmp(name, topic->info->name) == 0 ||
+					     strcmp(name, topic->info->key) == 0))) {
 			return topic;
 		}
 	}
@@ -124,6 +126,30 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic)
 	return (uint32_t)atomic_get((atomic_t *)&topic->generation);
 }
 
+/* synapse_fbs 0.3.3 catalog entry: VehicleCommand left the 0.5.x schema for
+ * the queryable command protocol, but the electrode ground station still
+ * consumes this 40-byte broadcast on the old topic key. The id sits above
+ * the generated catalog range (0.3.3 used 22, which later releases
+ * reassigned), and the schema fingerprint is a fixed marker for this legacy
+ * layout — the ground station never validates the value contract.
+ */
+static const synapse_topic_info_t g_vehicle_command_info = {
+	.id = 65001,
+	.name = "VehicleCommand",
+	.key = "synapse/v1/topic/vehicle_command",
+	.root_table = "VehicleCommand",
+	.payload_type = "VehicleCommandData",
+	.payload_size = sizeof(struct csyn_vehicle_command),
+	.schema_file = "fbs/control.fbs",
+	.wire_type = "synapse.topic.VehicleCommandData",
+	.schema_hash = "ffc2edbf80cfc1e45fd00c6d9443bc0f",
+	.fixed_layout = true,
+	.multi_instance = false,
+	.scope = "any",
+	.encoding = "struct",
+	.description = "Generic command with floating-point arguments.",
+};
+
 static int csyn_init(void)
 {
 	STRUCT_SECTION_FOREACH(csyn_topic, topic) {
@@ -132,6 +158,10 @@ static int csyn_init(void)
 				topic->info = &synapse_topics[j];
 				break;
 			}
+		}
+
+		if (topic->info == NULL && strcmp(topic->key, "vehicle_command") == 0) {
+			topic->info = &g_vehicle_command_info;
 		}
 
 		if (topic->info == NULL) {

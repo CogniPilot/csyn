@@ -5,10 +5,12 @@
 #include <csyn/csyn_codec.h>
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <zephyr/sys/util.h>
 
+#include <synapse/mocap_reader.h>
 #include <synapse/state_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
@@ -50,6 +52,133 @@ void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll,
 	*roll = atan2f(sinr_cosp, cosr_cosp);
 	*pitch = asinf(csyn_clampf(sinp, -1.0f, 1.0f));
 	*yaw = atan2f(siny_cosp, cosy_cosp);
+}
+
+/*
+ * Compact per-rigid-body pose published by mocap bridges
+ * (synapse_qualisys_bridge and the electrode ground station) on
+ * `synapse/mocap/rigid_body/<name>/pose`: 7 little-endian f32 values
+ * [px, py, pz, qx, qy, qz, qw] — ENU metres, quaternion scalar (w) LAST.
+ */
+#define CSYN_MOCAP_COMPACT_POSE_SIZE (7U * sizeof(float))
+
+static bool csyn_decode_compact_pose(const uint8_t *buf, struct csyn_mocap_rigid_body *rb)
+{
+	float values[7];
+
+	memcpy(values, buf, sizeof(values));
+	for (size_t i = 0U; i < ARRAY_SIZE(values); i++) {
+		if (!isfinite(values[i])) {
+			return false;
+		}
+	}
+
+	*rb = (struct csyn_mocap_rigid_body){
+		.id = 0,
+		.x = values[0],
+		.y = values[1],
+		.z = values[2],
+		.qx = values[3],
+		.qy = values[4],
+		.qz = values[5],
+		.qw = values[6],
+		.valid = true,
+	};
+
+	return true;
+}
+
+/* Shepperd's method; rotation maps body FLU vectors into ENU, quat w first. */
+static void csyn_quatf_from_rotation(const synapse_types_RotationMatrix3f_t *r, float q[4])
+{
+	float trace = r->r11 + r->r22 + r->r33;
+	float s;
+
+	if (trace > 0.0f) {
+		s = sqrtf(trace + 1.0f) * 2.0f;
+		q[0] = 0.25f * s;
+		q[1] = (r->r32 - r->r23) / s;
+		q[2] = (r->r13 - r->r31) / s;
+		q[3] = (r->r21 - r->r12) / s;
+	} else if (r->r11 > r->r22 && r->r11 > r->r33) {
+		s = sqrtf(1.0f + r->r11 - r->r22 - r->r33) * 2.0f;
+		q[0] = (r->r32 - r->r23) / s;
+		q[1] = 0.25f * s;
+		q[2] = (r->r12 + r->r21) / s;
+		q[3] = (r->r13 + r->r31) / s;
+	} else if (r->r22 > r->r33) {
+		s = sqrtf(1.0f + r->r22 - r->r11 - r->r33) * 2.0f;
+		q[0] = (r->r13 - r->r31) / s;
+		q[1] = (r->r12 + r->r21) / s;
+		q[2] = 0.25f * s;
+		q[3] = (r->r23 + r->r32) / s;
+	} else {
+		s = sqrtf(1.0f + r->r33 - r->r11 - r->r22) * 2.0f;
+		q[0] = (r->r21 - r->r12) / s;
+		q[1] = (r->r13 + r->r31) / s;
+		q[2] = (r->r23 + r->r32) / s;
+		q[3] = 0.25f * s;
+	}
+}
+
+/* body_id selects a QTM 6D rigid body (1-based); 0 takes the frame's first. */
+bool csyn_decode_mocap_frame(const uint8_t *buf, size_t buf_size, int32_t body_id,
+			     struct csyn_mocap_rigid_body *rb)
+{
+	synapse_topic_MocapFrame_table_t frame;
+	synapse_topic_MocapRigidBodyData_vec_t bodies;
+	size_t count;
+
+	if (buf == NULL || rb == NULL || buf_size < 8U) {
+		return false;
+	}
+
+	if (buf_size == CSYN_MOCAP_COMPACT_POSE_SIZE) {
+		return csyn_decode_compact_pose(buf, rb);
+	}
+
+	frame = synapse_topic_MocapFrame_as_root(buf);
+	if (frame == NULL) {
+		return false;
+	}
+
+	bodies = synapse_topic_MocapFrame_rigid_bodies(frame);
+	if (bodies == NULL) {
+		return false;
+	}
+
+	count = synapse_topic_MocapRigidBodyData_vec_len(bodies);
+	for (size_t i = 0U; i < count; i++) {
+		synapse_topic_MocapRigidBodyData_struct_t body =
+			synapse_topic_MocapRigidBodyData_vec_at(bodies, i);
+		synapse_types_Vec3f_struct_t position;
+		synapse_types_RotationMatrix3f_struct_t rotation;
+		float q[4];
+
+		if (body_id > 0 && synapse_topic_MocapRigidBodyData_id(body) != body_id) {
+			continue;
+		}
+
+		position = synapse_topic_MocapRigidBodyData_position_enu_m(body);
+		rotation = synapse_topic_MocapRigidBodyData_rotation(body);
+		csyn_quatf_from_rotation(rotation, q);
+
+		*rb = (struct csyn_mocap_rigid_body){
+			.id = synapse_topic_MocapRigidBodyData_id(body),
+			.x = position->x,
+			.y = position->y,
+			.z = position->z,
+			.qw = q[0],
+			.qx = q[1],
+			.qy = q[2],
+			.qz = q[3],
+			.valid = (synapse_topic_MocapRigidBodyData_flags(body) &
+				  synapse_topic_MocapRawFlags_Valid) != 0U,
+		};
+		return true;
+	}
+
+	return false;
 }
 
 static float milli_to_axis(int16_t value, float min_value, float max_value)

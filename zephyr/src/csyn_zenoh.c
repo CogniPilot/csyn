@@ -88,6 +88,69 @@ static void input_handler(z_loaned_sample_t *sample, void *arg)
 	(void)csyn_topic_publish(topic, buf, payload_len);
 }
 
+static bool key_contains(const char *key, size_t key_len, const char *needle)
+{
+	size_t needle_len = strlen(needle);
+
+	if (key == NULL || key_len < needle_len) {
+		return false;
+	}
+	for (size_t i = 0U; i + needle_len <= key_len; i++) {
+		if (memcmp(&key[i], needle, needle_len) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* Mocap arbitration: the selected/ stream is the station's deliberate source
+ * choice, so while it delivers plausible poses the fallback keys are ignored.
+ */
+static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
+{
+	struct csyn_topic *topic = arg;
+	z_bytes_reader_t reader;
+	z_view_string_t key_view;
+	uint8_t buf[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
+	size_t payload_len = z_bytes_len(z_sample_payload(sample));
+	/* Sample-count freshness: no kernel clock — this callback runs on the
+	 * zenoh rx thread, which is not a Zephyr thread on native_sim.
+	 */
+	static int suppress_fallback;
+	const char *key;
+	size_t key_len;
+	bool selected;
+	bool plausible;
+
+	if (payload_len > MIN(sizeof(buf), (size_t)topic->max_size)) {
+		return;
+	}
+	reader = z_bytes_get_reader(z_sample_payload(sample));
+	if (z_bytes_reader_read(&reader, buf, payload_len) != payload_len) {
+		return;
+	}
+
+	/* all-0xff header marks the tracking-lost sentinel */
+	plausible = payload_len >= 4U &&
+		    !(buf[0] == 0xffU && buf[1] == 0xffU && buf[2] == 0xffU && buf[3] == 0xffU);
+
+	z_keyexpr_as_view_string(z_sample_keyexpr(sample), &key_view);
+	key = z_string_data(z_loan(key_view));
+	key_len = z_string_len(z_loan(key_view));
+	selected = key_contains(key, key_len, "/selected/");
+
+	if (selected) {
+		if (plausible) {
+			suppress_fallback = CONFIG_CSYN_ZENOH_MOCAP_SELECTED_HOLD_SAMPLES;
+		}
+	} else if (suppress_fallback > 0) {
+		suppress_fallback--;
+		return;
+	}
+
+	(void)csyn_topic_publish(topic, buf, payload_len);
+}
+
 static int config_init(z_owned_config_t *config)
 {
 	bool is_client = strcmp(CONFIG_CSYN_ZENOH_MODE, "client") == 0;
@@ -111,7 +174,8 @@ static int config_init(z_owned_config_t *config)
 	return rc;
 }
 
-static int declare_rx_subscriber(const z_loaned_session_t *session, struct csyn_topic *topic)
+static int declare_rx_key_subscriber(const z_loaned_session_t *session, const char *key,
+				     struct csyn_topic *topic)
 {
 	z_owned_closure_sample_t callback;
 	z_view_keyexpr_t view;
@@ -119,12 +183,35 @@ static int declare_rx_subscriber(const z_loaned_session_t *session, struct csyn_
 
 	z_internal_null(&callback);
 
-	rc = z_view_keyexpr_from_str(&view, topic->info->key);
+	rc = z_view_keyexpr_from_str(&view, key);
 	if (rc < 0) {
 		return rc;
 	}
 
 	z_closure(&callback, input_handler, NULL, topic);
+	return z_declare_background_subscriber(session, z_loan(view), z_move(callback), NULL);
+}
+
+static int declare_rx_subscriber(const z_loaned_session_t *session, struct csyn_topic *topic)
+{
+	return declare_rx_key_subscriber(session, topic->info->key, topic);
+}
+
+static int declare_rx_mocap_subscriber(const z_loaned_session_t *session, const char *key,
+				       struct csyn_topic *topic)
+{
+	z_owned_closure_sample_t callback;
+	z_view_keyexpr_t view;
+	int rc;
+
+	z_internal_null(&callback);
+
+	rc = z_view_keyexpr_from_str(&view, key);
+	if (rc < 0) {
+		return rc;
+	}
+
+	z_closure(&callback, mocap_input_handler, NULL, topic);
 	return z_declare_background_subscriber(session, z_loan(view), z_move(callback), NULL);
 }
 
@@ -153,10 +240,60 @@ static int open_session(z_owned_session_t *session)
 			continue;
 		}
 
-		rc = declare_rx_subscriber(z_loan(*session), topic);
+		/* The frame stream is high-rate; only pull it off the network
+		 * when it is the selected mocap source. Mocap streams predate
+		 * the value-contract scheme (legacy compact poses carry no
+		 * metadata), so they use the arbitration handler instead of
+		 * the contract-enforcing one.
+		 */
+		if (strcmp(topic->key, "mocap") == 0) {
+			if (!IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_FRAME)) {
+				continue;
+			}
+			rc = declare_rx_mocap_subscriber(z_loan(*session), topic->info->key, topic);
+		} else {
+			rc = declare_rx_subscriber(z_loan(*session), topic);
+		}
 		if (rc < 0) {
 			z_drop(z_move(*session));
 			return rc;
+		}
+	}
+
+	/* Direct mocap feed: subscribe a raw pose stream into the mocap
+	 * topic without any ground-side republisher in the path.
+	 */
+	if (IS_ENABLED(CONFIG_CSYN_MOCAP_SOURCE_POSE_KEY) &&
+	    CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY[0] != '\0') {
+		struct csyn_topic *mocap = csyn_topic_find("mocap");
+
+		if (mocap != NULL) {
+			rc = declare_rx_mocap_subscriber(z_loan(*session),
+							 CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY, mocap);
+			if (rc < 0) {
+				z_drop(z_move(*session));
+				return rc;
+			}
+			LOG_INF("csyn zenoh mocap key %s", CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY);
+		}
+	}
+
+	/* Per-body estimator stream; subscribing also switches on the bridge's
+	 * demand-driven publisher for that body.
+	 */
+	if (CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY[0] != '\0') {
+		struct csyn_topic *odometry = csyn_topic_find("external_pose");
+
+		if (odometry != NULL) {
+			rc = declare_rx_key_subscriber(z_loan(*session),
+						       CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY,
+						       odometry);
+			if (rc < 0) {
+				z_drop(z_move(*session));
+				return rc;
+			}
+			LOG_INF("csyn zenoh external odometry key %s",
+				CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY);
 		}
 	}
 
