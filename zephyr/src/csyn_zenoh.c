@@ -84,8 +84,8 @@ static void mocap_input_handler(z_loaned_sample_t *sample, void *arg)
 	}
 
 	/* all-0xff header marks the tracking-lost sentinel */
-	plausible = payload_len >= 4U && !(buf[0] == 0xffU && buf[1] == 0xffU &&
-					   buf[2] == 0xffU && buf[3] == 0xffU);
+	plausible = payload_len >= 4U &&
+		    !(buf[0] == 0xffU && buf[1] == 0xffU && buf[2] == 0xffU && buf[3] == 0xffU);
 
 	z_keyexpr_as_view_string(z_sample_keyexpr(sample), &key_view);
 	key = z_string_data(z_loan(key_view));
@@ -216,8 +216,8 @@ static int open_session(z_owned_session_t *session)
 		struct csyn_topic *mocap = csyn_topic_find("mocap_frame");
 
 		if (mocap != NULL) {
-			rc = declare_rx_mocap_subscriber(
-				z_loan(*session), CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY, mocap);
+			rc = declare_rx_mocap_subscriber(z_loan(*session),
+							 CONFIG_CSYN_ZENOH_MOCAP_POSE_KEY, mocap);
 			if (rc < 0) {
 				z_drop(z_move(*session));
 				return rc;
@@ -233,9 +233,9 @@ static int open_session(z_owned_session_t *session)
 		struct csyn_topic *odometry = csyn_topic_find("external_odometry");
 
 		if (odometry != NULL) {
-			rc = declare_rx_key_subscriber(
-				z_loan(*session), CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY,
-				odometry);
+			rc = declare_rx_key_subscriber(z_loan(*session),
+						       CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY,
+						       odometry);
 			if (rc < 0) {
 				z_drop(z_move(*session));
 				return rc;

@@ -29,7 +29,8 @@ ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_estimate, synapse_topic_AttitudeEsti
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_command, synapse_topic_AttitudeCommandData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(mission_progress, synapse_topic_MissionProgressData_t);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(local_position_command, synapse_topic_LocalPositionCommandData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(local_position_command,
+				   synapse_topic_LocalPositionCommandData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_command, struct csyn_vehicle_command);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(navigation_target, synapse_topic_NavigationTargetData_t);
 
@@ -82,8 +83,7 @@ static struct bridge_tx_map g_tx_maps[] = {
 	 sizeof(g_mission_progress_msg)},
 	{&topic_local_position_command, "local_position_command", &g_local_pos_cmd_msg,
 	 sizeof(g_local_pos_cmd_msg)},
-	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg,
-	 sizeof(g_vehicle_cmd_msg)},
+	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg)},
 	{&topic_navigation_target, "navigation_target", &g_nav_target_msg,
 	 sizeof(g_nav_target_msg)},
 };
