@@ -58,4 +58,23 @@ bool csyn_topic_copy(struct csyn_topic *topic, void *buf, size_t buf_size, size_
 		     uint32_t *generation);
 uint32_t csyn_topic_generation(const struct csyn_topic *topic);
 
+/* A small request/reply surface for vehicle services. The callback runs on
+ * csyn's Zenoh transport thread, so it must be bounded and must not block on
+ * the control loop. `reply` is caller-owned and valid only for this call.
+ *
+ * Keys naming catalog commands (`cmd/<name>`) get the mandatory synapse
+ * value contract: requests with a missing or mismatched encoding are
+ * rejected before the handler runs, and replies are stamped with the
+ * command's reply contract. CONFIG_CSYN_NAMESPACE applies to service keys
+ * the same way it applies to topic keys.
+ */
+typedef bool (*csyn_query_handler_t)(const uint8_t *request, size_t request_len,
+				     uint8_t *reply, size_t reply_capacity,
+				     size_t *reply_len, void *user);
+
+/* Register before the Zenoh transport connects (normally from main). Returns
+ * false when the key is invalid or the registry is full.
+ */
+bool csyn_zenoh_register_queryable(const char *key, csyn_query_handler_t handler, void *user);
+
 #endif

@@ -18,6 +18,7 @@
 LOG_MODULE_REGISTER(csyn_zenoh, LOG_LEVEL_INF);
 
 #define CSYN_ZENOH_MAX_TOPICS             32U
+#define CSYN_ZENOH_MAX_QUERYABLES         8U
 #define CSYN_ZENOH_KEYEXPR_MAX            96U
 #define CSYN_VALUE_CONTRACT_MAX           192U
 #define CSYN_CONTRACT_WARNING_INTERVAL_MS 10000
@@ -25,24 +26,61 @@ LOG_MODULE_REGISTER(csyn_zenoh, LOG_LEVEL_INF);
 static K_THREAD_STACK_DEFINE(g_csyn_zenoh_stack, CONFIG_CSYN_ZENOH_THREAD_STACK_SIZE);
 static struct k_thread g_csyn_zenoh_thread;
 
+struct csyn_queryable {
+	const char *key;
+	/* Catalog command whose request/reply contract the service speaks;
+	 * NULL for services outside the command catalog. */
+	const synapse_command_info_t *command;
+	csyn_query_handler_t handler;
+	void *user;
+	int64_t last_contract_warning_ms;
+};
+
+static struct csyn_queryable g_queryables[CSYN_ZENOH_MAX_QUERYABLES];
+static size_t g_queryable_count;
+
+bool csyn_zenoh_register_queryable(const char *key, csyn_query_handler_t handler, void *user)
+{
+	const char *name;
+
+	if (key == NULL || handler == NULL || g_queryable_count >= ARRAY_SIZE(g_queryables)) {
+		return false;
+	}
+
+	name = strrchr(key, '/');
+	name = (name != NULL) ? name + 1 : key;
+	g_queryables[g_queryable_count++] = (struct csyn_queryable){
+		.key = key,
+		.command = synapse_command_by_name(name),
+		.handler = handler,
+		.user = user,
+	};
+	return true;
+}
+
 /* Every catalog topic this node carries publishes and subscribes as
  * [<namespace>/]<key> per the synapse key grammar; CONFIG_CSYN_NAMESPACE
  * scopes the whole node, e.g. "cub1".
  */
-static int topic_keyexpr(const synapse_topic_info_t *info, char *out, size_t out_size)
+static int key_with_namespace(const char *key, char *out, size_t out_size)
 {
 	int len;
 
 	if (CONFIG_CSYN_NAMESPACE[0] != '\0') {
-		len = snprintf(out, out_size, "%s/%s", CONFIG_CSYN_NAMESPACE, info->key);
+		len = snprintf(out, out_size, "%s/%s", CONFIG_CSYN_NAMESPACE, key);
 	} else {
-		len = snprintf(out, out_size, "%s", info->key);
+		len = snprintf(out, out_size, "%s", key);
 	}
 
 	if (len <= 0 || (size_t)len >= out_size) {
 		return -EINVAL;
 	}
 	return 0;
+}
+
+static int topic_keyexpr(const synapse_topic_info_t *info, char *out, size_t out_size)
+{
+	return key_with_namespace(info->key, out, out_size);
 }
 
 static int value_contract(const synapse_topic_info_t *info, char *out, size_t out_size)
@@ -55,6 +93,25 @@ static int value_contract(const synapse_topic_info_t *info, char *out, size_t ou
 	}
 	return snprintf(out, out_size, "%s;type=%s;schema=sha256-128:%s", media_type,
 			info->wire_type, info->schema_hash);
+}
+
+/* Request (reply=false) or reply (reply=true) side of a command's value
+ * contract, mirroring value_contract() for topics.
+ */
+static int command_contract(const synapse_command_info_t *command, bool reply, char *out,
+			    size_t out_size)
+{
+	const char *encoding = reply ? command->reply_encoding : command->request_encoding;
+	const char *type = reply ? command->reply_type : command->request_type;
+	const char *hash = reply ? command->reply_schema_hash : command->request_schema_hash;
+	const char *media_type = (encoding != NULL && strcmp(encoding, "struct") == 0)
+					 ? "application/x-synapse-struct"
+					 : "application/x-flatbuffers";
+
+	if (type == NULL || hash == NULL) {
+		return -EINVAL;
+	}
+	return snprintf(out, out_size, "%s;type=%s;schema=sha256-128:%s", media_type, type, hash);
 }
 
 static bool sample_contract_matches(z_loaned_sample_t *sample, struct csyn_topic *topic)
@@ -242,6 +299,119 @@ static int declare_rx_mocap_subscriber(const z_loaned_session_t *session, const 
 	return z_declare_background_subscriber(session, z_loan(view), z_move(callback), NULL);
 }
 
+/* Reject catalog-command requests whose value contract is missing or wrong,
+ * mirroring sample_contract_matches(). Services outside the command catalog
+ * carry no contract.
+ */
+static bool query_contract_matches(z_loaned_query_t *query, struct csyn_queryable *service)
+{
+	char expected[CSYN_VALUE_CONTRACT_MAX];
+	z_owned_string_t received;
+	int expected_len;
+	bool matches = false;
+
+	if (service->command == NULL) {
+		return true;
+	}
+
+	expected_len = command_contract(service->command, false, expected, sizeof(expected));
+	z_internal_null(&received);
+	if (expected_len > 0 && (size_t)expected_len < sizeof(expected) &&
+	    z_encoding_to_string(z_query_encoding(query), &received) >= 0) {
+		matches = z_string_len(z_loan(received)) == (size_t)expected_len &&
+			  memcmp(z_string_data(z_loan(received)), expected, expected_len) == 0;
+	}
+
+	if (!matches) {
+		int64_t now = k_uptime_get();
+		if (service->last_contract_warning_ms == 0 ||
+		    now - service->last_contract_warning_ms >= CSYN_CONTRACT_WARNING_INTERVAL_MS) {
+			LOG_WRN("rejecting %s: incompatible or missing request contract",
+				service->key);
+			service->last_contract_warning_ms = MAX(now, 1);
+		}
+	}
+	z_drop(z_move(received));
+	return matches;
+}
+
+static void query_handler(z_loaned_query_t *query, void *arg)
+{
+	struct csyn_queryable *service = arg;
+	z_bytes_reader_t reader;
+	uint8_t request[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
+	uint8_t reply[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
+	size_t request_len = z_bytes_len(z_query_payload(query));
+	size_t reply_len = 0U;
+	z_owned_bytes_t reply_bytes;
+	z_query_reply_options_t options;
+	int rc;
+
+	LOG_DBG("csyn zenoh query %s (%zu bytes)", service->key, request_len);
+
+	if (!query_contract_matches(query, service)) {
+		return;
+	}
+	if (request_len > sizeof(request)) {
+		return;
+	}
+	reader = z_bytes_get_reader(z_query_payload(query));
+	if (z_bytes_reader_read(&reader, request, request_len) != request_len) {
+		LOG_WRN("csyn zenoh query payload read failed for %s", service->key);
+		return;
+	}
+	if (!service->handler(request, request_len, reply, sizeof(reply), &reply_len,
+			      service->user) ||
+	    reply_len > sizeof(reply)) {
+		LOG_WRN("csyn zenoh query handler failed for %s", service->key);
+		return;
+	}
+	LOG_DBG("csyn zenoh reply %s (%zu bytes)", service->key, reply_len);
+
+	z_query_reply_options_default(&options);
+	if (service->command != NULL) {
+		char contract[CSYN_VALUE_CONTRACT_MAX];
+		z_owned_encoding_t encoding;
+		int len = command_contract(service->command, true, contract, sizeof(contract));
+
+		z_internal_null(&encoding);
+		if (len > 0 && (size_t)len < sizeof(contract) &&
+		    z_encoding_from_str(&encoding, contract) == 0) {
+			options.encoding = z_move(encoding);
+		}
+	}
+
+	z_internal_null(&reply_bytes);
+	rc = z_bytes_copy_from_buf(&reply_bytes, reply, reply_len);
+	if (rc == 0) {
+		rc = z_query_reply(query, z_query_keyexpr(query), z_move(reply_bytes), &options);
+	}
+	if (rc < 0) {
+		LOG_WRN("csyn zenoh reply failed for %s: %d", service->key, rc);
+	}
+}
+
+static int declare_queryable(const z_loaned_session_t *session, struct csyn_queryable *service)
+{
+	char key[CSYN_ZENOH_KEYEXPR_MAX];
+	z_owned_closure_query_t callback;
+	z_view_keyexpr_t view;
+	int rc;
+
+	z_internal_null(&callback);
+
+	rc = key_with_namespace(service->key, key, sizeof(key));
+	if (rc < 0) {
+		return rc;
+	}
+	rc = z_view_keyexpr_from_str(&view, key);
+	if (rc < 0) {
+		return rc;
+	}
+	z_closure_query(&callback, query_handler, NULL, service);
+	return z_declare_background_queryable(session, z_loan(view), z_move(callback), NULL);
+}
+
 static int open_session(z_owned_session_t *session)
 {
 	z_owned_config_t config;
@@ -257,6 +427,21 @@ static int open_session(z_owned_session_t *session)
 
 	rc = z_open(session, z_move(config), NULL);
 	if (rc < 0) {
+		return rc;
+	}
+
+	/* zenoh-pico's multithreaded API does not service inbound traffic until
+	 * both background tasks are started. Publications can appear to work
+	 * without them, while subscriptions and queryables never receive data.
+	 */
+	rc = zp_start_read_task(z_loan_mut(*session), NULL);
+	if (rc < 0) {
+		z_drop(z_move(*session));
+		return rc;
+	}
+	rc = zp_start_lease_task(z_loan_mut(*session), NULL);
+	if (rc < 0) {
+		z_drop(z_move(*session));
 		return rc;
 	}
 
@@ -327,6 +512,15 @@ static int open_session(z_owned_session_t *session)
 			LOG_INF("csyn zenoh external odometry key %s",
 				CONFIG_CSYN_ZENOH_EXTERNAL_ODOMETRY_KEY);
 		}
+	}
+
+	for (size_t i = 0U; i < g_queryable_count; i++) {
+		rc = declare_queryable(z_loan(*session), &g_queryables[i]);
+		if (rc < 0) {
+			z_drop(z_move(*session));
+			return rc;
+		}
+		LOG_INF("csyn zenoh service %s", g_queryables[i].key);
 	}
 
 	return 0;
