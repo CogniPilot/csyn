@@ -20,13 +20,16 @@
 
 LOG_MODULE_REGISTER(csyn_zros, LOG_LEVEL_INF);
 
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(manual_control, struct csyn_manual_control);
-ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(external_odometry, synapse_topic_ExternalOdometryData_t);
+#if !defined(CONFIG_CSYN_ZROS_BRIDGE_EXTERNAL_TX_TOPICS)
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(pwm_signal_outputs, synapse_topic_PwmSignalOutputsData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(vehicle_health, synapse_topic_VehicleHealthData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_estimate, synapse_topic_AttitudeEstimateData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(attitude_command, synapse_topic_AttitudeCommandData_t);
 ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
+#endif
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(manual_control, struct csyn_manual_control);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(inertial_sample, synapse_topic_InertialSampleData_t);
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(external_odometry, synapse_topic_ExternalOdometryData_t);
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic)
 {
@@ -37,8 +40,10 @@ static K_THREAD_STACK_DEFINE(g_bridge_stack, 2048);
 static struct k_thread g_bridge_thread;
 static struct zros_node g_bridge_node;
 static struct zros_pub g_manual_control_pub;
+static struct zros_pub g_inertial_sample_pub;
 static struct zros_pub g_external_odometry_pub;
 static struct csyn_manual_control g_manual_control;
+static synapse_topic_InertialSampleData_t g_inertial_sample;
 static synapse_topic_ExternalOdometryData_t g_external_odometry;
 
 /*
@@ -140,6 +145,19 @@ static void publish_external_odometry_if_updated(struct csyn_topic *topic,
 	(void)zros_pub_update(&g_external_odometry_pub);
 }
 
+static void publish_inertial_sample_if_updated(struct csyn_topic *topic, uint32_t *last_generation)
+{
+	size_t len = 0U;
+
+	if (topic == NULL ||
+	    !copy_csyn_topic(topic, (uint8_t *)&g_inertial_sample, sizeof(g_inertial_sample), &len,
+			     last_generation) ||
+	    len != sizeof(g_inertial_sample)) {
+		return;
+	}
+	(void)zros_pub_update(&g_inertial_sample_pub);
+}
+
 static void mirror_tx_if_updated(struct bridge_tx_map *map)
 {
 	uint32_t generation = csyn_zros_generation(map->zros);
@@ -159,8 +177,10 @@ static void mirror_tx_if_updated(struct bridge_tx_map *map)
 static void bridge_thread(void *arg0, void *arg1, void *arg2)
 {
 	struct csyn_topic *manual_topic = csyn_topic_find("manual_control_command");
+	struct csyn_topic *inertial_topic = csyn_topic_find("inertial_sample");
 	struct csyn_topic *external_odometry_topic = csyn_topic_find("external_odometry");
 	uint32_t last_manual_generation = 0U;
+	uint32_t last_inertial_generation = 0U;
 	uint32_t last_external_odometry_generation = 0U;
 
 	ARG_UNUSED(arg0);
@@ -169,6 +189,7 @@ static void bridge_thread(void *arg0, void *arg1, void *arg2)
 
 	while (true) {
 		publish_manual_control_if_updated(manual_topic, &last_manual_generation);
+		publish_inertial_sample_if_updated(inertial_topic, &last_inertial_generation);
 		publish_external_odometry_if_updated(external_odometry_topic,
 						     &last_external_odometry_generation);
 		for (size_t i = 0U; i < ARRAY_SIZE(g_tx_maps); i++) {
@@ -194,6 +215,12 @@ static int bridge_init(void)
 
 	rc = zros_pub_init(&g_manual_control_pub, &g_bridge_node, &topic_manual_control,
 			   &g_manual_control);
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = zros_pub_init(&g_inertial_sample_pub, &g_bridge_node, &topic_inertial_sample,
+			   &g_inertial_sample);
 	if (rc != 0) {
 		return rc;
 	}
