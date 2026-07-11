@@ -23,6 +23,10 @@ from the generated catalog; applications provide the deployment-specific wire
 key with `CSYN_TOPIC_DEFINE()`. The wire contract is locked by csyn rather than
 vendored per application.
 
+Csyn `v0.5.0` pins synapse_fbs `0.7.0`. This release uses the `mocap`, `odom`,
+and `odom_cov` catalog topics and expects vehicles to allocate their selected
+in-process topics with the native ZROS definition macros.
+
 On Zenoh, every value must carry the canonical Synapse contract metadata: media
 type, fully qualified wire type, and that individual type's transitive schema
 fingerprint (truncated SHA-256). The Rust CLI and Zephyr transport refuse
@@ -176,11 +180,11 @@ nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/sc
 
 GitHub Actions publishes the Rust CLI crate to crates.io when a tag matching
 `vMAJOR.MINOR.PATCH` is pushed. The tag version must match
-`rust/Cargo.toml`, so a release for version `0.3.0` is:
+`rust/Cargo.toml`, so the `0.5.0` release is:
 
 ```sh
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
