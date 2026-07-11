@@ -12,6 +12,7 @@
 #include <zephyr/sys/util.h>
 
 #include <synapse/control_reader.h>
+#include <synapse/sensors_reader.h>
 #include <synapse/state_reader.h>
 
 LOG_MODULE_REGISTER(csyn, LOG_LEVEL_INF);
@@ -19,6 +20,7 @@ LOG_MODULE_REGISTER(csyn, LOG_LEVEL_INF);
 #define CSYN_SLOTS(_sym, _size) static uint8_t _sym[2U * (_size)]
 
 CSYN_SLOTS(g_manual_control_slots, sizeof(synapse_topic_ManualControlData_t));
+CSYN_SLOTS(g_inertial_sample_slots, sizeof(synapse_topic_InertialSampleData_t));
 CSYN_SLOTS(g_external_odometry_slots, sizeof(synapse_topic_ExternalOdometryData_t));
 CSYN_SLOTS(g_pwm_signal_outputs_slots, sizeof(synapse_topic_PwmSignalOutputsData_t));
 CSYN_SLOTS(g_vehicle_health_slots, sizeof(synapse_topic_VehicleHealthData_t));
@@ -36,6 +38,7 @@ CSYN_SLOTS(g_control_loop_metrics_slots, sizeof(synapse_topic_ControlLoopMetrics
 
 static struct csyn_topic g_topics[] = {
 	CSYN_TOPIC("manual_control_command", CSYN_DIR_RX, g_manual_control_slots),
+	CSYN_TOPIC("inertial_sample", CSYN_DIR_RX, g_inertial_sample_slots),
 	CSYN_TOPIC("external_odometry", CSYN_DIR_RX, g_external_odometry_slots),
 	CSYN_TOPIC("pwm_signal_outputs", CSYN_DIR_TX, g_pwm_signal_outputs_slots),
 	CSYN_TOPIC("vehicle_health", CSYN_DIR_TX, g_vehicle_health_slots),
