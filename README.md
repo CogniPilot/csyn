@@ -1,5 +1,8 @@
 # csyn
 
+[![CI](https://github.com/CogniPilot/csyn/actions/workflows/ci.yml/badge.svg)](https://github.com/CogniPilot/csyn/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/csyn.svg)](https://crates.io/crates/csyn)
+
 csyn is the CogniPilot synapse topic toolkit. One repo, two sides of the wire,
 one folder per artifact:
 
@@ -23,7 +26,7 @@ from the generated catalog; applications provide the deployment-specific wire
 key with `CSYN_TOPIC_DEFINE()`. The wire contract is locked by csyn rather than
 vendored per application.
 
-Csyn `v0.5.0` pins synapse_fbs `0.7.0`. This release uses the `mocap`, `odom`,
+Csyn `v0.5.0` pins synapse_fbs `0.8.0`. This release uses the `mocap`, `odom`,
 and `odom_cov` catalog topics and expects vehicles to allocate their selected
 in-process topics with the native ZROS definition macros.
 
@@ -90,7 +93,7 @@ skipped by the bridge. Csyn only declares the topic interfaces and provides the
 bridge functions.
 
 The macro key may be bare or namespaced. The final key segment selects the
-synapse_fbs 0.7 catalog type, while the complete declared key is used on the
+synapse_fbs 0.8 catalog type, while the complete declared key is used on the
 wire. Source-specific namespaces therefore stay in the vehicle configuration:
 the same firmware setup can use `vicon/cub1/odom`, `qualisys/cub1/odom`, or
 another deployment path without csyn hardcoding a mocap vendor.
@@ -120,9 +123,10 @@ cd rust
 cargo run -- topic list
 ```
 
-Bags are standard MCAP files whose schema records carry the embedded
-synapse_fbs binary schemas, so recordings are self-describing for any MCAP
-tool. The legacy `.csynbag` format is retired.
+Bags use the `synapse/1` MCAP profile built into synapse_fbs 0.8. Schema
+records carry canonical rooted topic names and embedded binary schemas, while
+required file metadata records the schema-set hash, session, source, and time
+basis. The legacy `.csynbag` format is retired.
 
 The CLI uses the published `synapse_fbs` crate matching the Zephyr module's
 pinned C release asset.

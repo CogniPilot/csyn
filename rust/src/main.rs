@@ -5,6 +5,7 @@ mod graph;
 mod types;
 mod zenoh_util;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -20,6 +21,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use clap::{CommandFactory, Parser};
 use serde::Serialize;
+use synapse_fbs::mcap::container as mcap;
 use zenoh::Wait;
 
 use crate::bag::BagWriter;
@@ -476,15 +478,19 @@ fn run_bag(connect: String, command: BagCommand, shutdown: Arc<AtomicBool>) -> R
             output,
             keyexpr,
             ty,
+            source,
             duration,
             max_messages,
         } => bag_record(
             connect,
-            output,
-            keyexpr,
-            ty,
-            duration,
-            max_messages,
+            BagRecordOptions {
+                output,
+                keyexpr,
+                ty,
+                source,
+                duration,
+                max_messages,
+            },
             shutdown,
         ),
         BagCommand::Info { input } => bag_info(input),
@@ -498,15 +504,24 @@ fn run_bag(connect: String, command: BagCommand, shutdown: Arc<AtomicBool>) -> R
     }
 }
 
-fn bag_record(
-    connect: String,
+struct BagRecordOptions {
     output: PathBuf,
     keyexpr: String,
     ty: Option<String>,
+    source: String,
     duration: Option<f64>,
     max_messages: Option<u64>,
-    shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+}
+
+fn bag_record(connect: String, options: BagRecordOptions, shutdown: Arc<AtomicBool>) -> Result<()> {
+    let BagRecordOptions {
+        output,
+        keyexpr,
+        ty,
+        source,
+        duration,
+        max_messages,
+    } = options;
     let keyexpr = subscribe_keyexpr(&keyexpr);
     let session = open_session(&connect)?;
     let subscriber = session
@@ -515,12 +530,8 @@ fn bag_record(
         .map_err(|error| anyhow!("failed to subscribe to {keyexpr}: {error}"))?;
     let forced_type = ty.as_deref().map(TopicType::require).transpose()?;
 
-    let library = format!(
-        "csyn {} (synapse_fbs {})",
-        env!("CARGO_PKG_VERSION"),
-        synapse_fbs::VERSION
-    );
-    let mut writer = BagWriter::create(&output, &library)?;
+    let library = format!("csyn/{}", env!("CARGO_PKG_VERSION"));
+    let mut writer = BagWriter::create(&output, &library, &source)?;
     let mut warnings = ContractWarningThrottle::default();
     let started = Instant::now();
     let deadline = duration
@@ -568,49 +579,63 @@ fn bag_record(
 
 fn bag_info(input: PathBuf) -> Result<()> {
     let contents = bag::read_bag(&input)?;
-    let summary = mcap::read::Summary::read(&contents)
-        .context("failed to read bag summary")?
-        .ok_or_else(|| anyhow!("{} has no MCAP summary section", input.display()))?;
+    let profile = bag::profile_metadata(&contents)?;
+    let mut channels = BTreeMap::new();
+    let mut schemas = BTreeSet::new();
+    let mut message_count = 0_u64;
+    let mut start_time = u64::MAX;
+    let mut end_time = 0_u64;
+
+    for message in mcap::MessageStream::new(&contents).context("failed to open bag")? {
+        let message = message.context("failed to read bag message")?;
+        let schema = message
+            .channel
+            .schema
+            .as_ref()
+            .expect("validated channels have schemas");
+        schemas.insert(schema.id);
+        let entry = channels
+            .entry(message.channel.id)
+            .or_insert_with(|| (message.channel.clone(), 0_u64));
+        entry.1 += 1;
+        message_count += 1;
+        start_time = start_time.min(message.log_time);
+        end_time = end_time.max(message.log_time);
+    }
 
     println!("file: {}", input.display());
     println!("format: mcap");
-    println!("schemas: {}", summary.schemas.len());
-    println!("channels: {}", summary.channels.len());
-    if let Some(stats) = &summary.stats {
-        println!("messages: {}", stats.message_count);
-        let duration_ns = stats
-            .message_end_time
-            .saturating_sub(stats.message_start_time);
-        if stats.message_count > 0 {
-            println!("duration: {:.6} s", duration_ns as f64 / 1e9);
-        }
+    println!("profile: {}", synapse_fbs::topic_catalog::MCAP_PROFILE);
+    println!("library: {}", profile.library);
+    println!("source: {}", profile.source);
+    println!("session: {}", profile.session_id);
+    println!("time basis: {}", profile.time_basis);
+    println!("schema set: {}", profile.schema_set_hash);
+    println!("schemas: {}", schemas.len());
+    println!("channels: {}", channels.len());
+    println!("messages: {message_count}");
+    if message_count > 0 {
+        let duration_ns = end_time.saturating_sub(start_time);
+        println!("duration: {:.6} s", duration_ns as f64 / 1e9);
     }
-    if !summary.channels.is_empty() {
+    if !channels.is_empty() {
         println!();
         println!("channels:");
-        let mut channels: Vec<_> = summary.channels.iter().collect();
-        channels.sort_by_key(|(id, _)| **id);
-        for (id, channel) in channels {
+        for (_, (channel, count)) in channels {
             let schema = channel
                 .schema
                 .as_ref()
                 .map(|schema| schema.name.as_str())
                 .unwrap_or("unknown");
-            let count = summary
-                .stats
-                .as_ref()
-                .and_then(|stats| stats.channel_message_counts.get(id))
-                .copied()
-                .unwrap_or(0);
             println!(
-                "  {} [{}] messages={} encoding={} contract={}",
+                "  {} [{}] messages={} encoding={} topic_id={}",
                 channel.topic,
                 schema,
                 count,
                 channel.message_encoding,
                 channel
                     .metadata
-                    .get(bag::VALUE_CONTRACT_METADATA_KEY)
+                    .get(synapse_fbs::topic_catalog::MCAP_TOPIC_ID_KEY)
                     .map(String::as_str)
                     .unwrap_or("missing")
             );
@@ -632,6 +657,7 @@ fn bag_play(
 
     let session = open_session(&connect)?;
     let contents = bag::read_bag(&input)?;
+    bag::profile_metadata(&contents)?;
     let mut previous_ns = None;
     let mut played = 0_u64;
 
@@ -654,37 +680,19 @@ fn bag_play(
         }
         previous_ns = Some(message.log_time);
 
-        let schema = message.channel.schema.as_ref().ok_or_else(|| {
-            anyhow!(
-                "MCAP channel {} has no required Synapse schema",
-                message.channel.topic
-            )
-        })?;
-        let known_type = TopicType::find(&schema.name)
-            .ok_or_else(|| anyhow!("unknown MCAP Synapse type {}", schema.name))?;
-        if schema.encoding != types::SCHEMA_ENCODING_FLATBUFFER
-            || schema.data.as_ref() != known_type.schema.bfbs
-            || message.channel.message_encoding != known_type.message_encoding()
-            || message
-                .channel
-                .metadata
-                .get(bag::VALUE_CONTRACT_METADATA_KEY)
-                != Some(&known_type.zenoh_encoding().to_string())
-        {
-            return Err(anyhow!(
-                "MCAP channel {} has an incompatible Synapse schema contract",
-                message.channel.topic
-            ));
-        }
-        known_type.decode(&message.data).with_context(|| {
-            format!(
-                "MCAP payload on {} does not match {}",
-                message.channel.topic, known_type.topic.name
-            )
-        })?;
+        let known_type = bag::channel_type(&message.channel)?;
+        let payload = known_type
+            .mcap_to_zenoh_payload(&message.data)
+            .with_context(|| {
+                format!(
+                    "MCAP payload on {} does not match {}",
+                    message.channel.topic, known_type.topic.name
+                )
+            })?;
+        known_type.decode(&payload)?;
 
         session
-            .put(message.channel.topic.clone(), message.data.to_vec())
+            .put(message.channel.topic.clone(), payload.into_owned())
             .encoding(known_type.zenoh_encoding())
             .wait()
             .map_err(|error| anyhow!("failed to publish {}: {error}", message.channel.topic))?;
@@ -712,6 +720,7 @@ fn bag_export_jsonl(
     topic_filter: Option<String>,
 ) -> Result<()> {
     let contents = bag::read_bag(&input)?;
+    bag::profile_metadata(&contents)?;
     let writer: Box<dyn Write> = match output {
         Some(path) => Box::new(
             fs::File::create(&path)
@@ -730,48 +739,24 @@ fn bag_export_jsonl(
             continue;
         }
 
-        let schema = message.channel.schema.as_ref().ok_or_else(|| {
-            anyhow!(
-                "MCAP channel {} has no required Synapse schema",
-                message.channel.topic
-            )
-        })?;
-        let known_type = TopicType::find(&schema.name)
-            .ok_or_else(|| anyhow!("unknown MCAP Synapse type {}", schema.name))?;
-        if schema.encoding != types::SCHEMA_ENCODING_FLATBUFFER
-            || schema.data.as_ref() != known_type.schema.bfbs
-            || message.channel.message_encoding != known_type.message_encoding()
-            || message
-                .channel
-                .metadata
-                .get(bag::VALUE_CONTRACT_METADATA_KEY)
-                != Some(&known_type.zenoh_encoding().to_string())
-        {
-            return Err(anyhow!(
-                "MCAP channel {} has an incompatible Synapse schema contract",
-                message.channel.topic
-            ));
-        }
-        let decoded = Some(known_type.decode(&message.data).with_context(|| {
-            format!(
-                "MCAP payload on {} does not match {}",
-                message.channel.topic, known_type.topic.name
-            )
-        })?);
+        let known_type = bag::channel_type(&message.channel)?;
+        let payload = known_type
+            .mcap_to_zenoh_payload(&message.data)
+            .with_context(|| {
+                format!(
+                    "MCAP payload on {} does not match {}",
+                    message.channel.topic, known_type.topic.name
+                )
+            })?;
+        let decoded = Some(known_type.decode(&payload)?);
+        let value_contract = known_type.zenoh_encoding().to_string();
         let line = ExportFrame {
             log_time_ns: message.log_time,
             topic: &message.channel.topic,
-            wire_type: message
-                .channel
-                .schema
-                .as_ref()
-                .map(|schema| schema.name.clone()),
-            encoding: &message.channel.message_encoding,
-            value_contract: message
-                .channel
-                .metadata
-                .get(bag::VALUE_CONTRACT_METADATA_KEY),
-            payload_base64: BASE64.encode(&message.data),
+            wire_type: known_type.wire_type(),
+            encoding: known_type.topic.encoding,
+            value_contract: &value_contract,
+            payload_base64: BASE64.encode(&payload),
             decoded,
         };
         serde_json::to_writer(&mut writer, &line)?;
@@ -786,9 +771,9 @@ fn bag_export_jsonl(
 struct ExportFrame<'a> {
     log_time_ns: u64,
     topic: &'a str,
-    wire_type: Option<String>,
+    wire_type: Option<&'static str>,
     encoding: &'a str,
-    value_contract: Option<&'a String>,
+    value_contract: &'a str,
     payload_base64: String,
     decoded: Option<String>,
 }

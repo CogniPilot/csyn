@@ -491,7 +491,7 @@ static int open_session(z_owned_session_t *session)
 		}
 
 		/* The frame stream is high-rate; only pull it off the network
-		 * when it is the selected mocap source. The canonical 0.7 mocap
+		 * when it is the selected mocap source. The canonical 0.8 mocap
 		 * topic uses MocapPoseFrame and requires its value contract; the
 		 * separately configured legacy compact-pose key remains untyped.
 		 */

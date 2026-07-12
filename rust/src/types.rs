@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::{Result, anyhow};
 use synapse_fbs::schemas::{self, EmbeddedSchema};
 use synapse_fbs::topic_catalog::{self, TopicInfo};
@@ -5,13 +7,6 @@ use synapse_fbs::topic_decode;
 use synapse_fbs::value_contract;
 use zenoh::bytes::Encoding;
 
-/// MCAP well-known schema encoding for flatc binary schemas.
-pub const SCHEMA_ENCODING_FLATBUFFER: &str = "flatbuffer";
-/// MCAP well-known message encoding for FlatBuffers root-table payloads.
-pub const MESSAGE_ENCODING_FLATBUFFER: &str = "flatbuffer";
-/// Message encoding for the canonical Synapse bare fixed-layout struct
-/// payloads; these carry no root offset, so they are not plain "flatbuffer".
-pub const MESSAGE_ENCODING_SYNAPSE_STRUCT: &str = "synapse_struct";
 /// A catalog topic paired with the embedded schema file that defines it. All
 /// metadata resolves against the synapse_fbs release this binary was built
 /// with, so the wire contract is pinned by the crate, not vendored copies.
@@ -49,6 +44,7 @@ impl TopicType {
                     known
                         .wire_type()
                         .is_some_and(|wire| wire.eq_ignore_ascii_case(name))
+                        || known.topic.mcap_schema_name.eq_ignore_ascii_case(name)
                 })
             })
     }
@@ -82,13 +78,9 @@ impl TopicType {
         self.topic.schema_hash
     }
 
-    /// MCAP message encoding for this topic's canonical Zenoh payload.
-    pub fn message_encoding(self) -> &'static str {
-        if self.topic.fixed_layout {
-            MESSAGE_ENCODING_SYNAPSE_STRUCT
-        } else {
-            MESSAGE_ENCODING_FLATBUFFER
-        }
+    /// Embedded BFBS used by this topic's canonical MCAP root table.
+    pub fn mcap_schema(self) -> &'static EmbeddedSchema {
+        self.schema
     }
 
     /// Canonical, mandatory Zenoh encoding and exact schema fingerprint.
@@ -101,6 +93,108 @@ impl TopicType {
         topic_decode::decode_topic_debug(self.topic, payload)
             .map_err(|error| anyhow!("{}: {error}", self.topic.name))
     }
+
+    /// Convert a canonical Zenoh payload into the rooted payload required by
+    /// the `synapse/1` MCAP profile. Variable-size topics are already rooted;
+    /// fixed-layout topic structs receive their generated one-field wrapper.
+    pub fn to_mcap_payload<'a>(self, payload: &'a [u8]) -> Result<Cow<'a, [u8]>> {
+        self.decode(payload)?;
+        if self.topic.fixed_layout {
+            Ok(Cow::Owned(wrap_fixed_payload(payload)?))
+        } else {
+            Ok(Cow::Borrowed(payload))
+        }
+    }
+
+    /// Publication timestamp required by `synapse/1`. Fixed-layout structs
+    /// place `timestamp_us` first; root tables use the first FlatBuffers slot.
+    /// Topics without that field fall back to the logger acceptance time.
+    pub fn mcap_publish_time_ns(self, payload: &[u8], log_time_ns: u64) -> Result<u64> {
+        self.decode(payload)?;
+        let timestamp_us = if self.topic.fixed_layout {
+            payload
+                .get(0..8)
+                .map(|bytes| u64::from_le_bytes(bytes.try_into().expect("slice is eight bytes")))
+        } else {
+            let root_offset = u32::from_le_bytes(
+                payload
+                    .get(0..4)
+                    .expect("validated FlatBuffer has a root offset")
+                    .try_into()
+                    .expect("slice is four bytes"),
+            ) as usize;
+            // SAFETY: decode above verifies the complete topic root table.
+            let table = unsafe { flatbuffers::Table::new(payload, root_offset) };
+            // SAFETY: slot 4 is either absent or the catalog topic's u64
+            // timestamp_us field, as fixed by the Synapse topic contract.
+            unsafe { table.get::<u64>(4, None) }
+        };
+        timestamp_us
+            .map(|timestamp| {
+                timestamp.checked_mul(1_000).ok_or_else(|| {
+                    anyhow!("{} timestamp_us overflows nanoseconds", self.topic.name)
+                })
+            })
+            .transpose()
+            .map(|timestamp| timestamp.unwrap_or(log_time_ns))
+    }
+
+    /// Recover the canonical Zenoh payload from a `synapse/1` MCAP message.
+    pub fn mcap_to_zenoh_payload<'a>(self, payload: &'a [u8]) -> Result<Cow<'a, [u8]>> {
+        if self.topic.fixed_layout {
+            let expected = self
+                .topic
+                .payload_size
+                .expect("fixed-layout topics have a payload size");
+            Ok(Cow::Borrowed(unwrap_fixed_payload(payload, expected)?))
+        } else {
+            self.decode(payload)?;
+            Ok(Cow::Borrowed(payload))
+        }
+    }
+}
+
+fn wrap_fixed_payload(payload: &[u8]) -> Result<Vec<u8>> {
+    let object_size = payload
+        .len()
+        .checked_add(4)
+        .ok_or_else(|| anyhow!("fixed payload is too large to wrap"))?;
+    if object_size > u16::MAX as usize || payload.len() > u32::MAX as usize - 14 {
+        return Err(anyhow!("fixed payload is too large to wrap"));
+    }
+
+    let mut output = Vec::with_capacity(payload.len() + 14);
+    output.extend_from_slice(&4_u32.to_le_bytes());
+    output.extend_from_slice(&(-(object_size as i32)).to_le_bytes());
+    output.extend_from_slice(payload);
+    output.extend_from_slice(&6_u16.to_le_bytes());
+    output.extend_from_slice(&(object_size as u16).to_le_bytes());
+    output.extend_from_slice(&4_u16.to_le_bytes());
+    Ok(output)
+}
+
+fn unwrap_fixed_payload(payload: &[u8], expected: usize) -> Result<&[u8]> {
+    let expected_len = expected
+        .checked_add(14)
+        .ok_or_else(|| anyhow!("fixed MCAP payload size overflow"))?;
+    let object_size = expected
+        .checked_add(4)
+        .ok_or_else(|| anyhow!("fixed MCAP object size overflow"))?;
+    if payload.len() != expected_len
+        || payload.get(0..4) != Some(4_u32.to_le_bytes().as_slice())
+        || payload.get(4..8) != Some((-(object_size as i32)).to_le_bytes().as_slice())
+        || payload.get(expected + 8..expected + 10) != Some(6_u16.to_le_bytes().as_slice())
+        || payload.get(expected + 10..expected + 12)
+            != Some((object_size as u16).to_le_bytes().as_slice())
+        || payload.get(expected + 12..expected + 14) != Some(4_u16.to_le_bytes().as_slice())
+    {
+        return Err(anyhow!(
+            "invalid fixed-layout MCAP wrapper ({} bytes, expected {})",
+            payload.len(),
+            expected_len
+        ));
+    }
+    Ok(&payload[8..expected + 8])
 }
 
 /// Expand a bare catalog topic reference into a subscription key expression
@@ -151,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_the_0_7_topic_keys() {
+    fn uses_the_0_8_topic_keys() {
         assert_eq!(
             TopicType::infer("qualisys/cub1/odom").unwrap().topic.name,
             "Odometry"
@@ -203,6 +297,29 @@ mod tests {
         assert!(TopicType::from_value_encoding(&mismatched).is_err());
         let extra = Encoding::from(format!("{encoding};extra=not-allowed"));
         assert!(TopicType::from_value_encoding(&extra).is_err());
+    }
+
+    #[test]
+    fn reads_table_publication_timestamps_for_mcap() {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let text = builder.create_string("ready");
+        let root = synapse_fbs::topic::TextStatus::create(
+            &mut builder,
+            &synapse_fbs::topic::TextStatusArgs {
+                timestamp_us: 123,
+                text: Some(text),
+                ..Default::default()
+            },
+        );
+        builder.finish(root, None);
+
+        let known = TopicType::find("TextStatus").unwrap();
+        assert_eq!(
+            known
+                .mcap_publish_time_ns(builder.finished_data(), 999)
+                .unwrap(),
+            123_000
+        );
     }
 
     #[test]

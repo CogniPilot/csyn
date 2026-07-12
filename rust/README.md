@@ -25,7 +25,7 @@ csyn topic bw '**/imu/**'
 csyn type list
 csyn type show health --fbs
 
-csyn bag record '**' -o flight.mcap
+csyn bag record '**' -o flight.mcap --source ground-station
 csyn bag info flight.mcap
 csyn bag play flight.mcap
 csyn bag export flight.mcap -o flight.jsonl
@@ -94,18 +94,19 @@ publisher/subscriber declarations exposed by Zenoh admin-space.
 
 ## Bag Format
 
-Bags are standard [MCAP](https://mcap.dev) files. Each observed Zenoh key
-becomes a channel; each catalog topic contributes a schema record with the
-fully qualified wire type as its name, `flatbuffer` encoding, and the
-embedded `.bfbs` binary schema from the pinned `synapse_fbs` release as its
-data — so bags are self-describing for any MCAP tool. Each channel also stores
-the exact Zenoh value contract in `synapse.value_contract` metadata; replay and
-export require it to match the local client.
+Bags use the frozen `synapse/1` MCAP profile built into `synapse_fbs` 0.8.
+Recordings contain the required schema-set hash, random session id, source,
+and Unix-epoch time-basis metadata; `--source` identifies the recorder and
+defaults to `csyn`.
 
-Channel message encodings mirror the catalog: `flatbuffer` for root-table
-topics and `synapse_struct` for the canonical bare fixed-layout struct
-payloads (which carry no FlatBuffers root offset). Samples without a valid
-Synapse value contract are not recorded.
+Each observed Zenoh key becomes a channel whose `synapse.topic_id` metadata,
+root-table schema name, `flatbuffer` encoding, and embedded `.bfbs` come from
+the pinned catalog. Fixed-layout Zenoh structs are wrapped in their existing
+root table for MCAP and unwrapped again during replay/export. Variable-size
+root-table payloads are stored unchanged. The upstream profile writer is
+uncompressed, unchunked, and index-less, so `bag info` scans messages rather
+than requiring an MCAP summary section. Samples without a valid Synapse value
+contract are not recorded.
 
 The legacy `.csynbag` v1 format is retired; `bag` subcommands only speak
 MCAP.

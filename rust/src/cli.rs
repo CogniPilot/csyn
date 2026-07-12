@@ -172,6 +172,12 @@ pub enum BagCommand {
             help = "Force all samples to this catalog topic"
         )]
         ty: Option<String>,
+        #[arg(
+            long,
+            default_value = "csyn",
+            help = "Source identity stored in required Synapse MCAP metadata"
+        )]
+        source: String,
         #[arg(long, help = "Stop after this many seconds")]
         duration: Option<f64>,
         #[arg(long, help = "Stop after this many samples")]
