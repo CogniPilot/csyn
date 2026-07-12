@@ -26,7 +26,7 @@ from the generated catalog; applications provide the deployment-specific wire
 key with `CSYN_TOPIC_DEFINE()`. The wire contract is locked by csyn rather than
 vendored per application.
 
-Csyn `v0.5.0` pins synapse_fbs `0.8.0`. This release uses the `mocap`, `odom`,
+Csyn `v0.6.0` pins synapse_fbs `0.8.0`. This release uses the `mocap`, `odom`,
 and `odom_cov` catalog topics and expects vehicles to allocate their selected
 in-process topics with the native ZROS definition macros.
 
