@@ -5,6 +5,7 @@
 #include <csyn/csyn.h>
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -120,6 +121,44 @@ static int command_contract(const synapse_command_info_t *command, bool reply, c
 	return snprintf(out, out_size, "%s;type=%s;schema=sha256-128:%s", media_type, type, hash);
 }
 
+/* Rust zenoh represents an unregistered MIME type with the protocol's custom
+ * encoding id (UINT16_MAX) and stores the complete contract in the schema.
+ * zenoh-pico currently parses the same string as zenoh/bytes plus a schema and
+ * renders received custom encodings with a leading ';'.  Normalize those two
+ * wire-equivalent forms at this boundary, while continuing to require an exact
+ * type and schema hash match. */
+static bool contract_string_matches(const z_loaned_string_t *received, const char *expected,
+				    size_t expected_len)
+{
+	const char *data = z_string_data(received);
+	size_t len = z_string_len(received);
+	static const char legacy_prefix[] = "zenoh/bytes;";
+
+	if (len == expected_len && memcmp(data, expected, expected_len) == 0) {
+		return true;
+	}
+	if (len == expected_len + 1U && data[0] == ';' &&
+	    memcmp(data + 1, expected, expected_len) == 0) {
+		return true;
+	}
+	return len == sizeof(legacy_prefix) - 1U + expected_len &&
+	       memcmp(data, legacy_prefix, sizeof(legacy_prefix) - 1U) == 0 &&
+	       memcmp(data + sizeof(legacy_prefix) - 1U, expected, expected_len) == 0;
+}
+
+static int encoding_from_contract(z_owned_encoding_t *encoding, const char *contract)
+{
+	int rc = z_encoding_from_str(encoding, contract);
+
+	if (rc == 0) {
+		/* z_owned_encoding_t is a public zenoh-pico owned-value wrapper.  Keep
+		 * the complete contract schema created above, but mark its id as the
+		 * protocol custom id used by zenoh's Rust implementation. */
+		encoding->_val.id = UINT16_MAX;
+	}
+	return rc;
+}
+
 static bool sample_contract_matches(z_loaned_sample_t *sample, struct csyn_topic *topic)
 {
 	char expected[CSYN_VALUE_CONTRACT_MAX];
@@ -130,8 +169,7 @@ static bool sample_contract_matches(z_loaned_sample_t *sample, struct csyn_topic
 	z_internal_null(&received);
 	if (expected_len > 0 && (size_t)expected_len < sizeof(expected) &&
 	    z_encoding_to_string(z_sample_encoding(sample), &received) >= 0) {
-		matches = z_string_len(z_loan(received)) == (size_t)expected_len &&
-			  memcmp(z_string_data(z_loan(received)), expected, expected_len) == 0;
+		matches = contract_string_matches(z_loan(received), expected, (size_t)expected_len);
 	}
 
 	if (!matches) {
@@ -356,8 +394,7 @@ static bool query_contract_matches(z_loaned_query_t *query, struct csyn_queryabl
 	z_internal_null(&received);
 	if (expected_len > 0 && (size_t)expected_len < sizeof(expected) &&
 	    z_encoding_to_string(z_query_encoding(query), &received) >= 0) {
-		matches = z_string_len(z_loan(received)) == (size_t)expected_len &&
-			  memcmp(z_string_data(z_loan(received)), expected, expected_len) == 0;
+		matches = contract_string_matches(z_loan(received), expected, (size_t)expected_len);
 	}
 
 	if (!matches) {
@@ -414,7 +451,7 @@ static void query_handler(z_loaned_query_t *query, void *arg)
 
 		z_internal_null(&encoding);
 		if (len > 0 && (size_t)len < sizeof(contract) &&
-		    z_encoding_from_str(&encoding, contract) == 0) {
+		    encoding_from_contract(&encoding, contract) == 0) {
 			options.encoding = z_move(encoding);
 		}
 	}
@@ -577,7 +614,7 @@ static int zenoh_put(const z_loaned_session_t *session, const struct csyn_topic 
 		z_drop(z_move(bytes));
 		return -EINVAL;
 	}
-	rc = z_encoding_from_str(&encoding, contract);
+	rc = encoding_from_contract(&encoding, contract);
 	if (rc < 0) {
 		z_drop(z_move(bytes));
 		return rc;

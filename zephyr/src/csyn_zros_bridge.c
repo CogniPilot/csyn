@@ -34,6 +34,7 @@ CSYN_ZROS_WEAK_TOPIC(attitude_command);
 CSYN_ZROS_WEAK_TOPIC(control_loop_metrics);
 CSYN_ZROS_WEAK_TOPIC(mission_progress);
 CSYN_ZROS_WEAK_TOPIC(local_position_command);
+CSYN_ZROS_WEAK_TOPIC(trajectory_segment);
 CSYN_ZROS_WEAK_TOPIC(vehicle_command);
 CSYN_ZROS_WEAK_TOPIC(navigation_target);
 
@@ -77,6 +78,7 @@ static synapse_topic_AttitudeCommandData_t g_att_cmd_msg;
 static synapse_topic_ControlLoopMetricsData_t g_metrics_msg;
 static synapse_topic_MissionProgressData_t g_mission_progress_msg;
 static synapse_topic_LocalPositionCommandData_t g_local_pos_cmd_msg;
+static synapse_topic_TrajectorySegmentData_t g_trajectory_segment_msg;
 static struct csyn_vehicle_command g_vehicle_cmd_msg;
 static synapse_topic_NavigationTargetData_t g_nav_target_msg;
 
@@ -90,7 +92,10 @@ static struct bridge_tx_map g_tx_maps[] = {
 	 sizeof(g_mission_progress_msg)},
 	{&topic_local_position_command, "pos_sp", &g_local_pos_cmd_msg,
 	 sizeof(g_local_pos_cmd_msg)},
-	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg)},
+	{&topic_trajectory_segment, "traj", &g_trajectory_segment_msg,
+	 sizeof(g_trajectory_segment_msg)},
+	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg,
+	 sizeof(g_vehicle_cmd_msg)},
 	{&topic_navigation_target, "nav", &g_nav_target_msg, sizeof(g_nav_target_msg)},
 };
 

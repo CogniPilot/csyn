@@ -9,6 +9,7 @@
 #include <synapse/control_reader.h>
 #include <synapse/sensors_reader.h>
 #include <synapse/state_reader.h>
+#include <synapse/trajectory_reader.h>
 
 ZROS_TOPIC_DECLARE(manual_control, struct csyn_manual_control);
 ZROS_TOPIC_DECLARE(mocap, struct csyn_mocap_rigid_body);
@@ -21,6 +22,7 @@ ZROS_TOPIC_DECLARE(attitude_command, synapse_topic_AttitudeCommandData_t);
 ZROS_TOPIC_DECLARE(control_loop_metrics, synapse_topic_ControlLoopMetricsData_t);
 ZROS_TOPIC_DECLARE(mission_progress, synapse_topic_MissionProgressData_t);
 ZROS_TOPIC_DECLARE(local_position_command, synapse_topic_LocalPositionCommandData_t);
+ZROS_TOPIC_DECLARE(trajectory_segment, synapse_topic_TrajectorySegmentData_t);
 ZROS_TOPIC_DECLARE(vehicle_command, struct csyn_vehicle_command);
 ZROS_TOPIC_DECLARE(navigation_target, synapse_topic_NavigationTargetData_t);
 
