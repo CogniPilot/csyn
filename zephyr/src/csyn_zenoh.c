@@ -414,11 +414,15 @@ static void query_handler(z_loaned_query_t *query, void *arg)
 {
 	struct csyn_queryable *service = arg;
 	z_bytes_reader_t reader;
-	uint8_t request[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
-	uint8_t reply[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
+	/* FlatBuffers may contain 64-bit scalars. Keep the copied request and
+	 * generated reply aligned independently of compiler stack layout so the
+	 * verifier can safely enforce their declared field alignment. */
+	uint8_t request[CONFIG_CSYN_FLATBUFFER_MAX_SIZE] __aligned(8);
+	uint8_t reply[CONFIG_CSYN_FLATBUFFER_MAX_SIZE] __aligned(8);
 	size_t request_len = z_bytes_len(z_query_payload(query));
 	size_t reply_len = 0U;
 	z_owned_bytes_t reply_bytes;
+	z_owned_encoding_t encoding;
 	z_query_reply_options_t options;
 	int rc;
 
@@ -444,12 +448,11 @@ static void query_handler(z_loaned_query_t *query, void *arg)
 	LOG_DBG("csyn zenoh reply %s (%zu bytes)", service->key, reply_len);
 
 	z_query_reply_options_default(&options);
+	z_internal_null(&encoding);
 	if (service->command != NULL) {
 		char contract[CSYN_VALUE_CONTRACT_MAX];
-		z_owned_encoding_t encoding;
 		int len = command_contract(service->command, true, contract, sizeof(contract));
 
-		z_internal_null(&encoding);
 		if (len > 0 && (size_t)len < sizeof(contract) &&
 		    encoding_from_contract(&encoding, contract) == 0) {
 			options.encoding = z_move(encoding);
@@ -460,6 +463,8 @@ static void query_handler(z_loaned_query_t *query, void *arg)
 	rc = z_bytes_copy_from_buf(&reply_bytes, reply, reply_len);
 	if (rc == 0) {
 		rc = z_query_reply(query, z_query_keyexpr(query), z_move(reply_bytes), &options);
+	} else {
+		z_drop(z_move(encoding));
 	}
 	if (rc < 0) {
 		LOG_WRN("csyn zenoh reply failed for %s: %d", service->key, rc);
