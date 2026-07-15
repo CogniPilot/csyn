@@ -13,6 +13,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 
+#include <zros/private/zros_node_struct.h>
+#include <zros/private/zros_pub_struct.h>
 #include <zros/private/zros_topic_struct.h>
 #include <zros/zros_node.h>
 #include <zros/zros_pub.h>
@@ -94,8 +96,7 @@ static struct bridge_tx_map g_tx_maps[] = {
 	 sizeof(g_local_pos_cmd_msg)},
 	{&topic_trajectory_segment, "traj", &g_trajectory_segment_msg,
 	 sizeof(g_trajectory_segment_msg)},
-	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg,
-	 sizeof(g_vehicle_cmd_msg)},
+	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg)},
 	{&topic_navigation_target, "nav", &g_nav_target_msg, sizeof(g_nav_target_msg)},
 };
 
