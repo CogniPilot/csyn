@@ -54,6 +54,6 @@ bool csyn_decode_manual_control(const void *buf, size_t buf_size, csyn_rc_channe
 				bool *valid);
 
 void csyn_pwm_outputs_from_rc(const csyn_rc_channels16_t *rc,
-			      synapse_topic_PwmSignalOutputsData_t *outputs, int64_t timestamp_us);
+			      synapse_topic_PwmSignalOutputsData_t *outputs, int64_t timestamp_ns);
 
 #endif

@@ -538,7 +538,7 @@ dependencies = [
 
 [[package]]
 name = "csyn"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2776,9 +2776,9 @@ dependencies = [
 
 [[package]]
 name = "synapse_fbs"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be33cffc36e920eebea1277fb919f0dab5c03122d3f7a8ff2a5aab9b9bd5c241"
+checksum = "9036026b85b238cd565243cda018f0c892c3f2dc72f2cdf5df2216a7c0a3f3bf"
 dependencies = [
  "flatbuffers",
  "mcap",

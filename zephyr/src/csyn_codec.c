@@ -15,7 +15,7 @@
 #include <synapse/state_reader.h>
 
 BUILD_ASSERT(sizeof(synapse_topic_ManualControlData_t) == 40U);
-BUILD_ASSERT(sizeof(synapse_topic_ExternalOdometryData_t) == 64U);
+BUILD_ASSERT(sizeof(synapse_topic_ExternalOdometryData_t) == 72U);
 BUILD_ASSERT(sizeof(synapse_topic_PwmSignalOutputsData_t) == 48U);
 BUILD_ASSERT(sizeof(csyn_rc_channels16_t) == 64U);
 BUILD_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
@@ -215,14 +215,14 @@ static uint16_t pwm_to_u16(int32_t value)
 }
 
 void csyn_pwm_outputs_from_rc(const csyn_rc_channels16_t *rc,
-			      synapse_topic_PwmSignalOutputsData_t *outputs, int64_t timestamp_us)
+			      synapse_topic_PwmSignalOutputsData_t *outputs, int64_t timestamp_ns)
 {
 	if (rc == NULL || outputs == NULL) {
 		return;
 	}
 
 	*outputs = (synapse_topic_PwmSignalOutputsData_t){
-		.timestamp_us = (uint64_t)MAX(timestamp_us, 0),
+		.timestamp_ns = (uint64_t)MAX(timestamp_ns, 0),
 		.active_mask = 0xffffU,
 		.port = 0U,
 		.output0_us = pwm_to_u16(rc->ch0),
