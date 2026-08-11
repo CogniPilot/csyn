@@ -107,11 +107,11 @@ impl TopicType {
     }
 
     /// Publication timestamp required by `synapse/1`. Fixed-layout structs
-    /// place `timestamp_us` first; root tables use the first FlatBuffers slot.
+    /// place `timestamp_ns` first; root tables use the first FlatBuffers slot.
     /// Topics without that field fall back to the logger acceptance time.
     pub fn mcap_publish_time_ns(self, payload: &[u8], log_time_ns: u64) -> Result<u64> {
         self.decode(payload)?;
-        let timestamp_us = if self.topic.fixed_layout {
+        let timestamp_ns = if self.topic.fixed_layout {
             payload
                 .get(0..8)
                 .map(|bytes| u64::from_le_bytes(bytes.try_into().expect("slice is eight bytes")))
@@ -126,17 +126,10 @@ impl TopicType {
             // SAFETY: decode above verifies the complete topic root table.
             let table = unsafe { flatbuffers::Table::new(payload, root_offset) };
             // SAFETY: slot 4 is either absent or the catalog topic's u64
-            // timestamp_us field, as fixed by the Synapse topic contract.
+            // timestamp_ns field, as fixed by the Synapse topic contract.
             unsafe { table.get::<u64>(4, None) }
         };
-        timestamp_us
-            .map(|timestamp| {
-                timestamp.checked_mul(1_000).ok_or_else(|| {
-                    anyhow!("{} timestamp_us overflows nanoseconds", self.topic.name)
-                })
-            })
-            .transpose()
-            .map(|timestamp| timestamp.unwrap_or(log_time_ns))
+        Ok(timestamp_ns.unwrap_or(log_time_ns))
     }
 
     /// Recover the canonical Zenoh payload from a `synapse/1` MCAP message.
@@ -306,7 +299,7 @@ mod tests {
         let root = synapse_fbs::topic::TextStatus::create(
             &mut builder,
             &synapse_fbs::topic::TextStatusArgs {
-                timestamp_us: 123,
+                timestamp_ns: 123,
                 text: Some(text),
                 ..Default::default()
             },
@@ -318,7 +311,7 @@ mod tests {
             known
                 .mcap_publish_time_ns(builder.finished_data(), 999)
                 .unwrap(),
-            123_000
+            123
         );
     }
 
@@ -345,7 +338,7 @@ mod tests {
         let known = TopicType::find("ControlLoopMetrics").unwrap();
         let payload = vec![0_u8; known.topic.payload_size.unwrap()];
         let rendered = known.decode(&payload).unwrap();
-        assert!(rendered.contains("timestamp_us"));
+        assert!(rendered.contains("timestamp_ns"));
         assert!(known.decode(&payload[1..]).is_err());
     }
 }

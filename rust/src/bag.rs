@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].sequence, 0);
         assert_eq!(messages[1].sequence, 1);
-        assert_eq!(messages[0].publish_time, 42_000);
+        assert_eq!(messages[0].publish_time, 42);
         let schema = messages[0].channel.schema.as_ref().unwrap();
         assert_eq!(schema.name, "synapse.topic.VehicleHealth");
         assert_eq!(schema.data.as_ref(), known.mcap_schema().bfbs);

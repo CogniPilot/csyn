@@ -69,7 +69,7 @@ ZTEST(csyn_store, test_registry_resolves_catalog)
 ZTEST(csyn_store, test_publish_copy_generation)
 {
 	struct csyn_topic *topic = csyn_topic_find("att");
-	synapse_topic_AttitudeEstimateData_t sample = {.timestamp_us = 1234U};
+	synapse_topic_AttitudeEstimateData_t sample = {.timestamp_ns = 1234U};
 	uint8_t oversize[sizeof(sample) + 1U];
 	uint8_t copy_buf[sizeof(sample)];
 	uint32_t generation = 0U;
@@ -90,7 +90,7 @@ ZTEST(csyn_store, test_publish_copy_generation)
 	zassert_mem_equal(copy_buf, &sample, sizeof(sample));
 
 	/* A second publish alternates slots and bumps the generation. */
-	sample.timestamp_us = 5678U;
+	sample.timestamp_ns = 5678U;
 	zassert_true(csyn_topic_publish(topic, &sample, sizeof(sample)));
 	zassert_true(csyn_topic_copy(topic, copy_buf, sizeof(copy_buf), &len, &generation));
 	zassert_equal(generation, 2U);
