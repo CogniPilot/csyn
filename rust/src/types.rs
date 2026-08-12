@@ -63,8 +63,17 @@ impl TopicType {
     /// The contract must exactly match this csyn build's embedded schema.
     pub fn from_value_encoding(encoding: &Encoding) -> Result<TopicType> {
         let received = encoding.to_string();
+        // zenoh-pico carries our contract as a schema on its default `zenoh/bytes`
+        // base encoding, because the Synapse media type is not a registered zenoh
+        // encoding id. Strip that transport wrapper so the contract (media type,
+        // wire type, schema hash) is validated exactly as authored, independent of
+        // how the transport represents an unregistered encoding.
+        let canonical = received
+            .find("application/x-")
+            .map(|idx| &received[idx..])
+            .unwrap_or(received.as_str());
         let topic =
-            value_contract::topic_for_encoding(&received).map_err(|error| anyhow!(error))?;
+            value_contract::topic_for_encoding(canonical).map_err(|error| anyhow!(error))?;
         Ok(Self::from_topic(topic))
     }
 
