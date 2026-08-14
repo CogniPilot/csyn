@@ -33,6 +33,23 @@ configure_file(
   @ONLY
 )
 
+# Under sysbuild this module configures in a child CMake project, and a
+# variable given to the sysbuild project does not arrive as a cache entry
+# here. A caller that selected generated bindings would silently get the
+# released archive below instead, so ask Zephyr for the value it holds for
+# this image before the source is fetched.
+if(SYSBUILD)
+  zephyr_get(_csyn_synapse_fbs_c_source
+    SYSBUILD LOCAL
+    VAR FETCHCONTENT_SOURCE_DIR_SYNAPSE_FBS_C
+  )
+  if(_csyn_synapse_fbs_c_source)
+    set(FETCHCONTENT_SOURCE_DIR_SYNAPSE_FBS_C "${_csyn_synapse_fbs_c_source}"
+      CACHE PATH "Existing synapse_fbs C sources supplied by the caller" FORCE
+    )
+  endif()
+endif()
+
 FetchContent_Declare(synapse_fbs_c
   URL ${CSYN_SYNAPSE_FBS_C_URL}
   URL_HASH ${CSYN_SYNAPSE_FBS_C_URL_HASH}
