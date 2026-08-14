@@ -7,6 +7,7 @@
 
 #include <csyn/csyn_types.h>
 #include <synapse/control_reader.h>
+#include <synapse/optical_flow_reader.h>
 #include <synapse/sensors_reader.h>
 #include <synapse/state_reader.h>
 #include <synapse/trajectory_reader.h>
@@ -15,6 +16,7 @@ ZROS_TOPIC_DECLARE(manual_control, struct csyn_manual_control);
 ZROS_TOPIC_DECLARE(mocap, struct csyn_mocap_rigid_body);
 ZROS_TOPIC_DECLARE(inertial_sample, synapse_topic_InertialSampleData_t);
 ZROS_TOPIC_DECLARE(odometry, synapse_topic_OdometryData_t);
+ZROS_TOPIC_DECLARE(optical_flow_velocity, synapse_topic_OpticalFlowVelocityData_t);
 ZROS_TOPIC_DECLARE(pwm_signal_outputs, synapse_topic_PwmSignalOutputsData_t);
 ZROS_TOPIC_DECLARE(vehicle_health, synapse_topic_VehicleHealthData_t);
 ZROS_TOPIC_DECLARE(attitude_estimate, synapse_topic_AttitudeEstimateData_t);

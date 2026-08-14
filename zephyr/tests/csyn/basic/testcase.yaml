@@ -17,7 +17,6 @@ tests:
       - native_sim/native/64
 
   csyn.basic.zros_bridge:
-    build_only: true
     integration_platforms:
       - native_sim
     platform_allow:

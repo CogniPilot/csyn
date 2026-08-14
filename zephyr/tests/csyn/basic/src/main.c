@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
 #include <math.h>
 #include <string.h>
 
@@ -11,6 +12,7 @@
 #include <csyn/csyn_codec.h>
 
 #include <synapse/control_reader.h>
+#include <synapse/optical_flow_reader.h>
 #include <synapse/sensors_reader.h>
 #include <synapse/state_reader.h>
 #include <synapse/topic_catalog.h>
@@ -23,6 +25,8 @@ CSYN_TOPIC_DEFINE(imu, "imu", CSYN_DIR_RX, sizeof(synapse_topic_InertialSampleDa
 CSYN_TOPIC_DEFINE(odom, "vicon/cub1/odom", CSYN_DIR_RX, sizeof(synapse_topic_OdometryData_t));
 CSYN_TOPIC_DEFINE(odom_cov, "vicon/cub1/odom_cov", CSYN_DIR_RX,
 		  sizeof(synapse_topic_OdometryWithCovarianceData_t));
+CSYN_TOPIC_DEFINE(flow_vel, "flow_vel", CSYN_DIR_RX,
+		  sizeof(synapse_topic_OpticalFlowVelocityData_t));
 CSYN_TOPIC_DEFINE(pwm, "pwm", CSYN_DIR_TX, sizeof(synapse_topic_PwmSignalOutputsData_t));
 CSYN_TOPIC_DEFINE(health, "health", CSYN_DIR_TX, sizeof(synapse_topic_VehicleHealthData_t));
 CSYN_TOPIC_DEFINE(att, "att", CSYN_DIR_TX, sizeof(synapse_topic_AttitudeEstimateData_t));
@@ -33,6 +37,15 @@ CSYN_TOPIC_DEFINE(pos_sp, "pos_sp", CSYN_DIR_TX, sizeof(synapse_topic_LocalPosit
 CSYN_TOPIC_DEFINE(vehicle_command, "vehicle_command", CSYN_DIR_TX,
 		  sizeof(struct csyn_vehicle_command));
 CSYN_TOPIC_DEFINE(nav, "nav", CSYN_DIR_TX, sizeof(synapse_topic_NavigationTargetData_t));
+
+#if defined(CONFIG_CSYN_ZROS_BRIDGE)
+#include <zephyr/kernel.h>
+
+#include <zros/private/zros_topic_struct.h>
+#include <zros/zros_topic.h>
+
+ZROS_TOPIC_DEFINE_SINGLE_PUBLISHER(optical_flow_velocity, synapse_topic_OpticalFlowVelocityData_t);
+#endif
 
 ZTEST(csyn_store, test_registry_resolves_catalog)
 {
@@ -102,6 +115,32 @@ ZTEST(csyn_store, test_publish_copy_generation)
 	zassert_false(csyn_topic_publish(NULL, &sample, sizeof(sample)));
 	zassert_false(csyn_topic_copy(topic, copy_buf, 1U, &len, &generation));
 }
+
+#if defined(CONFIG_CSYN_ZROS_BRIDGE)
+ZTEST(csyn_store, test_optical_flow_velocity_bridge)
+{
+	struct csyn_topic *topic = csyn_topic_find("flow_vel");
+	synapse_topic_OpticalFlowVelocityData_t sample = {
+		.timestamp_ns = 123456789U,
+		.velocity_flu_m_s = {.x = 1.25f, .y = -0.75f},
+		.distance_m = 1.5f,
+		.quality = 210U,
+		.flags = 7U,
+		.time_status = synapse_types_TimeStatus_GptpSynced,
+	};
+	synapse_topic_OpticalFlowVelocityData_t received = {0};
+	int rc = -ENOENT;
+
+	zassert_not_null(topic);
+	zassert_true(csyn_topic_publish(topic, &sample, sizeof(sample)));
+	for (size_t attempt = 0U; attempt < 20U && rc != 0; attempt++) {
+		k_sleep(K_MSEC(1));
+		rc = zros_topic_read(&topic_optical_flow_velocity, &received);
+	}
+	zassert_ok(rc);
+	zassert_mem_equal(&received, &sample, sizeof(sample));
+}
+#endif
 
 ZTEST(csyn_codec, test_pwm_axis_mapping)
 {
