@@ -83,18 +83,68 @@ config CSYN_ZENOH
 	depends on NET_UDP || BOARD_NATIVE_SIM
 	depends on POSIX_API || BOARD_NATIVE_SIM
 	select ZENOH_PICO
-	select ZENOH_PICO_MULTI_THREAD
 	select ZENOH_PICO_PUBLICATION
 	select ZENOH_PICO_SUBSCRIPTION
 	select ZENOH_PICO_QUERY
 	select ZENOH_PICO_QUERYABLE
-	select ZENOH_PICO_SCOUTING
-	select ZENOH_PICO_LINK_UDP_MULTICAST
-	select ZENOH_PICO_LINK_UDP_UNICAST
 	help
 	  Subscribe to inbound synapse topics over Zenoh and publish outbound
 	  topics over Zenoh. This is the flight transport for the
-	  Ethernet-only board path.
+	  Ethernet-only board path. The link, discovery, and threading posture
+	  are chosen with CSYN_ZENOH_POSTURE and CSYN_ZENOH_MULTI_THREAD rather
+	  than forced on, so a board can build a lean point-to-point client.
+
+config CSYN_ZENOH_MULTI_THREAD
+	bool "Service the Zenoh session on dedicated read and lease tasks"
+	depends on CSYN_ZENOH
+	default y
+	select ZENOH_PICO_MULTI_THREAD
+	help
+	  Start the zenoh-pico background read and lease tasks so the session
+	  runs off dedicated threads. Disable to build a single-thread client
+	  that services the session inline from the csyn zenoh thread, dropping
+	  the two background threads and their stacks. The task API is only
+	  compiled when this is set, so the same symbol picks the inline
+	  single-thread service loop when it is cleared.
+
+choice CSYN_ZENOH_POSTURE
+	prompt "csyn Zenoh link and discovery posture"
+	depends on CSYN_ZENOH
+	default CSYN_ZENOH_POSTURE_TCP_CLIENT
+	help
+	  Selects which zenoh-pico link and discovery code is compiled in. The
+	  session mode and locator are set separately with CSYN_ZENOH_MODE and
+	  CSYN_ZENOH_LOCATOR. This choice only decides which links are built.
+
+config CSYN_ZENOH_POSTURE_TCP_CLIENT
+	bool "TCP client (no scouting, no UDP multicast)"
+	select ZENOH_PICO_LINK_TCP
+	help
+	  Point-to-point TCP session to a fixed router locator such as
+	  tcp/10.58.0.1:7447. No UDP unicast, UDP multicast, or scouting code is
+	  compiled, so the build carries no multicast-listener path and no IPv6
+	  multicast-group (MLD) dependency.
+
+config CSYN_ZENOH_POSTURE_UDP_UNICAST
+	bool "UDP unicast client (no scouting, no UDP multicast)"
+	select ZENOH_PICO_LINK_UDP_UNICAST
+	help
+	  Point-to-point UDP session to a fixed peer locator such as
+	  udp/192.0.2.2:7447, used by the native_sim SITL side-channel. No
+	  multicast or scouting code is compiled.
+
+config CSYN_ZENOH_POSTURE_UDP_MULTICAST
+	bool "UDP multicast with scouting"
+	select ZENOH_PICO_LINK_UDP_UNICAST
+	select ZENOH_PICO_LINK_UDP_MULTICAST
+	select ZENOH_PICO_SCOUTING
+	help
+	  Peer and discovery posture that uses UDP multicast scouting. This
+	  compiles the multicast-listener path, which joins IPv6 multicast
+	  groups and therefore needs NET_IPV6 and NET_IPV6_MLD in the network
+	  stack.
+
+endchoice
 
 config CSYN_ZENOH_MODE
 	string "csyn Zenoh mode"

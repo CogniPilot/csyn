@@ -505,9 +505,12 @@ static int open_session(z_owned_session_t *session)
 		return rc;
 	}
 
-	/* zenoh-pico's multithreaded API does not service inbound traffic until
-	 * both background tasks are started. Publications can appear to work
-	 * without them, while subscriptions and queryables never receive data.
+#if defined(CONFIG_ZENOH_PICO_MULTI_THREAD)
+	/* Multi-thread posture starts two zenoh-pico background tasks. Without
+	 * them publications can appear to work while subscriptions and
+	 * queryables never receive data. The single-thread posture services the
+	 * session inline from the csyn zenoh thread instead (see
+	 * csyn_zenoh_thread()).
 	 */
 	rc = zp_start_read_task(z_loan_mut(*session), NULL);
 	if (rc < 0) {
@@ -519,6 +522,7 @@ static int open_session(z_owned_session_t *session)
 		z_drop(z_move(*session));
 		return rc;
 	}
+#endif
 
 	for (size_t i = 0U; i < csyn_topic_count(); i++) {
 		struct csyn_topic *topic = csyn_topic_at(i);
@@ -681,7 +685,23 @@ static void csyn_zenoh_thread(void *arg0, void *arg1, void *arg2)
 							     &last_generation[i]);
 				}
 			}
+#if defined(CONFIG_ZENOH_PICO_MULTI_THREAD)
 			k_sleep(K_MSEC(1));
+#else
+			/* With no background tasks in the single-thread posture,
+			 * the session is serviced inline here. zp_read blocks up
+			 * to the zenoh-pico socket timeout while it drains
+			 * inbound traffic, then the keep-alive holds the lease
+			 * open. A negative result means the link failed, so break
+			 * and let the outer loop drop the session and reconnect.
+			 */
+			if (zp_read(z_loan(session), NULL) < 0) {
+				break;
+			}
+			if (zp_send_keep_alive(z_loan(session), NULL) < 0) {
+				break;
+			}
+#endif
 		}
 
 		z_drop(z_move(session));
