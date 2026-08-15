@@ -69,8 +69,10 @@ struct bridge_tx_map {
 	const char *csyn_key;
 	void *msg;
 	size_t msg_size;
+	int32_t rate_hz; /* mesh publish rate: 0 off, -1 unlimited, >0 Hz cap */
 	struct csyn_topic *csyn;
 	uint32_t last_generation;
+	int64_t last_tx_ticks;
 };
 
 static synapse_topic_PwmSignalOutputsData_t g_pwm_msg;
@@ -85,19 +87,26 @@ static struct csyn_vehicle_command g_vehicle_cmd_msg;
 static synapse_topic_NavigationTargetData_t g_nav_target_msg;
 
 static struct bridge_tx_map g_tx_maps[] = {
-	{&topic_pwm_signal_outputs, "pwm", &g_pwm_msg, sizeof(g_pwm_msg)},
-	{&topic_vehicle_health, "health", &g_health_msg, sizeof(g_health_msg)},
-	{&topic_attitude_estimate, "att", &g_att_est_msg, sizeof(g_att_est_msg)},
-	{&topic_attitude_command, "att_sp", &g_att_cmd_msg, sizeof(g_att_cmd_msg)},
-	{&topic_control_loop_metrics, "loop", &g_metrics_msg, sizeof(g_metrics_msg)},
+	{&topic_pwm_signal_outputs, "pwm", &g_pwm_msg, sizeof(g_pwm_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_PWM_RATE_HZ},
+	{&topic_vehicle_health, "health", &g_health_msg, sizeof(g_health_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_HEALTH_RATE_HZ},
+	{&topic_attitude_estimate, "att", &g_att_est_msg, sizeof(g_att_est_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_ATT_RATE_HZ},
+	{&topic_attitude_command, "att_sp", &g_att_cmd_msg, sizeof(g_att_cmd_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_ATT_SP_RATE_HZ},
+	{&topic_control_loop_metrics, "loop", &g_metrics_msg, sizeof(g_metrics_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_LOOP_RATE_HZ},
 	{&topic_mission_progress, "mission", &g_mission_progress_msg,
-	 sizeof(g_mission_progress_msg)},
+	 sizeof(g_mission_progress_msg), CONFIG_CSYN_ZROS_BRIDGE_MISSION_RATE_HZ},
 	{&topic_local_position_command, "pos_sp", &g_local_pos_cmd_msg,
-	 sizeof(g_local_pos_cmd_msg)},
+	 sizeof(g_local_pos_cmd_msg), CONFIG_CSYN_ZROS_BRIDGE_POS_SP_RATE_HZ},
 	{&topic_trajectory_segment, "traj", &g_trajectory_segment_msg,
-	 sizeof(g_trajectory_segment_msg)},
-	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg)},
-	{&topic_navigation_target, "nav", &g_nav_target_msg, sizeof(g_nav_target_msg)},
+	 sizeof(g_trajectory_segment_msg), CONFIG_CSYN_ZROS_BRIDGE_TRAJ_RATE_HZ},
+	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_VEHICLE_COMMAND_RATE_HZ},
+	{&topic_navigation_target, "nav", &g_nav_target_msg, sizeof(g_nav_target_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_NAV_RATE_HZ},
 };
 
 static bool copy_csyn_topic(struct csyn_topic *topic, uint8_t *buf, size_t buf_size, size_t *len,
@@ -233,13 +242,29 @@ static void publish_inertial_sample_if_updated(struct csyn_topic *topic, uint32_
 static void mirror_tx_if_updated(struct bridge_tx_map *map)
 {
 	uint32_t generation;
+	int64_t now = 0;
 
 	if (map->zros == NULL || map->csyn == NULL) {
+		return;
+	}
+	/* rate_hz convention: 0 off, -1 unlimited, >0 Hz cap. */
+	if (map->rate_hz == 0) {
 		return;
 	}
 	generation = csyn_zros_generation(map->zros);
 	if (generation == 0U || generation == map->last_generation) {
 		return;
+	}
+	if (map->rate_hz > 0) {
+		int64_t interval = (int64_t)CONFIG_SYS_CLOCK_TICKS_PER_SEC / map->rate_hz;
+
+		if (interval < 1) {
+			interval = 1;
+		}
+		now = k_uptime_ticks();
+		if (map->last_tx_ticks != 0 && (now - map->last_tx_ticks) < interval) {
+			return;
+		}
 	}
 
 	if (zros_topic_read(map->zros, map->msg) != 0) {
@@ -248,6 +273,9 @@ static void mirror_tx_if_updated(struct bridge_tx_map *map)
 
 	(void)csyn_topic_publish(map->csyn, map->msg, map->msg_size);
 	map->last_generation = generation;
+	if (map->rate_hz > 0) {
+		map->last_tx_ticks = now;
+	}
 }
 
 static void bridge_thread(void *arg0, void *arg1, void *arg2)

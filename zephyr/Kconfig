@@ -28,6 +28,62 @@ config CSYN_ZROS_BRIDGE
 	  decoded and published to zros, outbound fixed-layout topics are
 	  copied from zros to the csyn store for the active transport.
 
+# Per-topic mesh publish rate caps for the outbound (TX) topics mirrored zros ->
+# csyn store. Convention shared with the spinali bridge: 0 = off (topic not
+# mirrored), -1 = unlimited (mirror every zros update), a positive value caps
+# the mesh publish at that many Hz. Default -1 keeps the forward-every-update
+# behavior, so these are opt-in caps with no effect until set.
+
+config CSYN_ZROS_BRIDGE_PWM_RATE_HZ
+	int "pwm mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_HEALTH_RATE_HZ
+	int "health mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_ATT_RATE_HZ
+	int "att (attitude estimate) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_ATT_SP_RATE_HZ
+	int "att_sp (attitude command) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_LOOP_RATE_HZ
+	int "loop (control-loop metrics) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_MISSION_RATE_HZ
+	int "mission progress mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_POS_SP_RATE_HZ
+	int "pos_sp (local position command) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_TRAJ_RATE_HZ
+	int "traj (trajectory segment) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_VEHICLE_COMMAND_RATE_HZ
+	int "vehicle_command mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
+config CSYN_ZROS_BRIDGE_NAV_RATE_HZ
+	int "nav (navigation target) mesh publish rate (Hz, 0 = off, -1 = unlimited)"
+	depends on CSYN_ZROS_BRIDGE
+	default -1
+
 config CSYN_SHELL
 	bool "Enable csyn shell diagnostics"
 	depends on SHELL
