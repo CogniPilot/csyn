@@ -6,6 +6,8 @@
 #include <csyn/csyn_codec.h>
 #include <csyn/csyn_zros.h>
 
+#include <synapse/optical_flow_reader.h>
+
 #include <errno.h>
 
 #include <zephyr/init.h>
@@ -39,6 +41,7 @@ CSYN_ZROS_WEAK_TOPIC(local_position_command);
 CSYN_ZROS_WEAK_TOPIC(trajectory_segment);
 CSYN_ZROS_WEAK_TOPIC(vehicle_command);
 CSYN_ZROS_WEAK_TOPIC(navigation_target);
+CSYN_ZROS_WEAK_TOPIC(optical_flow_vel);
 
 uint32_t csyn_zros_generation(const struct zros_topic *topic)
 {
@@ -59,6 +62,8 @@ static struct csyn_manual_control g_manual_control;
 static struct csyn_mocap_rigid_body g_mocap;
 static synapse_topic_InertialSampleData_t g_inertial_sample;
 static synapse_topic_OdometryData_t g_odometry;
+static struct zros_pub g_optical_flow_vel_pub;
+static synapse_topic_OpticalFlowVelocityData_t g_optical_flow_vel;
 
 /*
  * Fixed-layout TX topics carry the same struct bytes on both buses, so
@@ -239,6 +244,19 @@ static void publish_inertial_sample_if_updated(struct csyn_topic *topic, uint32_
 	(void)zros_pub_update(&g_inertial_sample_pub);
 }
 
+static void publish_optical_flow_vel_if_updated(struct csyn_topic *topic, uint32_t *last_generation)
+{
+	size_t len = 0U;
+
+	if (topic == NULL ||
+	    !copy_csyn_topic(topic, (uint8_t *)&g_optical_flow_vel, sizeof(g_optical_flow_vel), &len,
+			     last_generation) ||
+	    len != sizeof(g_optical_flow_vel)) {
+		return;
+	}
+	(void)zros_pub_update(&g_optical_flow_vel_pub);
+}
+
 static void mirror_tx_if_updated(struct bridge_tx_map *map)
 {
 	uint32_t generation;
@@ -287,10 +305,13 @@ static void bridge_thread(void *arg0, void *arg1, void *arg2)
 		&topic_inertial_sample != NULL ? csyn_topic_find("imu") : NULL;
 	struct csyn_topic *odometry_topic =
 		&topic_odometry != NULL ? csyn_topic_find("odom") : NULL;
+	struct csyn_topic *flow_vel_topic =
+		&topic_optical_flow_vel != NULL ? csyn_topic_find("flow_vel") : NULL;
 	uint32_t last_manual_generation = 0U;
 	uint32_t last_mocap_generation = 0U;
 	uint32_t last_inertial_generation = 0U;
 	uint32_t last_odometry_generation = 0U;
+	uint32_t last_flow_vel_generation = 0U;
 
 	ARG_UNUSED(arg0);
 	ARG_UNUSED(arg1);
@@ -301,6 +322,7 @@ static void bridge_thread(void *arg0, void *arg1, void *arg2)
 		publish_mocap_if_updated(mocap_topic, &last_mocap_generation);
 		publish_inertial_sample_if_updated(inertial_topic, &last_inertial_generation);
 		publish_odometry_if_updated(odometry_topic, &last_odometry_generation);
+		publish_optical_flow_vel_if_updated(flow_vel_topic, &last_flow_vel_generation);
 		for (size_t i = 0U; i < ARRAY_SIZE(g_tx_maps); i++) {
 			mirror_tx_if_updated(&g_tx_maps[i]);
 		}
@@ -356,6 +378,15 @@ static int bridge_init(void)
 
 	if (&topic_odometry != NULL && csyn_topic_find("odom") != NULL) {
 		rc = zros_pub_init(&g_odometry_pub, &g_bridge_node, &topic_odometry, &g_odometry);
+		if (rc != 0) {
+			return rc;
+		}
+		has_topics = true;
+	}
+
+	if (&topic_optical_flow_vel != NULL && csyn_topic_find("flow_vel") != NULL) {
+		rc = zros_pub_init(&g_optical_flow_vel_pub, &g_bridge_node, &topic_optical_flow_vel,
+				   &g_optical_flow_vel);
 		if (rc != 0) {
 			return rc;
 		}
