@@ -305,7 +305,25 @@ static int config_init(z_owned_config_t *config)
 
 	if (CONFIG_CSYN_ZENOH_LOCATOR[0] != '\0') {
 		rc = zp_config_insert(z_loan_mut(*config), locator_key, CONFIG_CSYN_ZENOH_LOCATOR);
+		if (rc < 0) {
+			return rc;
+		}
 	}
+
+	/* Engineered/locked mesh: a peer can also dial a fixed, known peer
+	 * directly so the topology is static and discovery-free.
+	 */
+	if (!is_client && CONFIG_CSYN_ZENOH_CONNECT[0] != '\0') {
+		rc = zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, CONFIG_CSYN_ZENOH_CONNECT);
+		if (rc < 0) {
+			return rc;
+		}
+	}
+
+#if !defined(CONFIG_CSYN_ZENOH_SCOUTING)
+	/* Discovery off: reach peers only through the static locators above. */
+	rc = zp_config_insert(z_loan_mut(*config), Z_CONFIG_MULTICAST_SCOUTING_KEY, "false");
+#endif
 
 	return rc;
 }

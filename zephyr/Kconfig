@@ -156,6 +156,26 @@ config CSYN_ZENOH_LOCATOR
 	depends on CSYN_ZENOH
 	default "udp/192.0.2.2:7447"
 
+config CSYN_ZENOH_SCOUTING
+	bool "Enable zenoh multicast scouting (discovery)"
+	depends on CSYN_ZENOH
+	default y
+	help
+	  Leave on for plug-and-play discovery. Turn off for an engineered,
+	  locked mesh: peers are then reached only through the static locators
+	  in CSYN_ZENOH_LOCATOR and CSYN_ZENOH_CONNECT, with no SCOUT and HELLO
+	  traffic. The deterministic UUID-derived addresses make the full peer
+	  set known ahead of time, so discovery is not required in flight.
+
+config CSYN_ZENOH_CONNECT
+	string "csyn Zenoh static peer connect locator"
+	depends on CSYN_ZENOH
+	default ""
+	help
+	  Optional peer locator to dial directly, for a locked mesh with no
+	  discovery. Applied in addition to CSYN_ZENOH_LOCATOR when the mode is
+	  peer. Leave empty to rely on the CSYN_ZENOH_LOCATOR endpoint alone.
+
 config CSYN_NAMESPACE
 	string "Default deployment namespace for bare csyn Zenoh keys"
 	depends on CSYN_ZENOH
