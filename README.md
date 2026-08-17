@@ -6,7 +6,7 @@
 csyn is the CogniPilot synapse topic toolkit. One repo, two sides of the wire,
 one folder per artifact:
 
-- **`zephyr/`**: the west module — a lock-free latest-sample topic store for
+- **`zephyr/`**: the west module - a lock-free latest-sample topic store for
   embedded vehicles, with zenoh and native_sim UDP transports, a zros bridge,
   and `csyn topic list/info/echo/hz/watch` shell diagnostics. csyn defines no
   topics of its own: applications declare their topic list with
@@ -26,9 +26,12 @@ from the generated catalog; applications provide the deployment-specific wire
 key with `CSYN_TOPIC_DEFINE()`. The wire contract is locked by csyn rather than
 vendored per application.
 
-Csyn `v0.7.0` pins synapse_fbs `0.9.0`. This release uses the `mocap`, `odom`,
-and `odom_cov` catalog topics and expects vehicles to allocate their selected
-in-process topics with the native ZROS definition macros.
+This branch aligns the Rust CLI with the synapse_fbs `0.10.0` C package
+already pinned by the `golden` Zephyr module. The tagged csyn `v0.7.0`
+release pinned synapse_fbs `0.9.0` for the Rust CLI. The current branch uses
+the `mocap`, `odom`, and `odom_cov` catalog topics and expects vehicles to
+allocate their selected in-process topics with the native ZROS definition
+macros.
 
 On Zenoh, every value must carry the canonical Synapse contract metadata: media
 type, fully qualified wire type, and that individual type's transitive schema
@@ -93,10 +96,11 @@ skipped by the bridge. Csyn only declares the topic interfaces and provides the
 bridge functions.
 
 The macro key may be bare or namespaced. The final key segment selects the
-synapse_fbs 0.8 catalog type, while the complete declared key is used on the
-wire. Source-specific namespaces therefore stay in the vehicle configuration:
-the same firmware setup can use `vicon/cub1/odom`, `qualisys/cub1/odom`, or
-another deployment path without csyn hardcoding a mocap vendor.
+corresponding pinned synapse_fbs catalog type, while the complete declared key
+is used on the wire. Source-specific namespaces therefore stay in the vehicle
+configuration: the same firmware setup can use `vicon/cub1/odom`,
+`qualisys/cub1/odom`, or another deployment path without csyn hardcoding a
+mocap vendor.
 
 Applications publish and subscribe through the zros topics declared in
 `<csyn/csyn_zros.h>`; the bridge mirrors whichever bridged topics the
@@ -104,14 +108,14 @@ application declared to the active transport.
 
 Layout (everything for the module lives under `zephyr/`):
 
-- `zephyr/include/csyn/csyn.h` — topic registry and store API
-- `zephyr/include/csyn/csyn_codec.h` — payload decode/encode plus PWM/axis
+- `zephyr/include/csyn/csyn.h` - topic registry and store API
+- `zephyr/include/csyn/csyn_codec.h` - payload decode/encode plus PWM/axis
   and quaternion/euler helpers
-- `zephyr/include/csyn/csyn_types.h` — plain in-process types (rc channels,
+- `zephyr/include/csyn/csyn_types.h` - plain in-process types (rc channels,
   manual control)
-- `zephyr/include/csyn/csyn_zros.h` — zros topic declarations vehicles use
-- `zephyr/src/` — store, codec, bridge, shell, and transports
-- `zephyr/{module.yml,Kconfig,CMakeLists.txt}` — west integration and the
+- `zephyr/include/csyn/csyn_zros.h` - zros topic declarations vehicles use
+- `zephyr/src/` - store, codec, bridge, shell, and transports
+- `zephyr/{module.yml,Kconfig,CMakeLists.txt}` - west integration and the
   pinned synapse_fbs release
 
 ## Rust CLI
@@ -123,10 +127,10 @@ cd rust
 cargo run -- topic list
 ```
 
-Bags use the `synapse/1` MCAP profile built into synapse_fbs 0.8. Schema
-records carry canonical rooted topic names and embedded binary schemas, while
-required file metadata records the schema-set hash, session, source, and time
-basis. The legacy `.csynbag` format is retired.
+Bags use the `synapse/1` MCAP profile built into the pinned synapse_fbs
+release. Schema records carry canonical rooted topic names and embedded binary
+schemas, while required file metadata records the schema-set hash, session,
+source, and time basis. The legacy `.csynbag` format is retired.
 
 The CLI uses the published `synapse_fbs` crate matching the Zephyr module's
 pinned C release asset.
@@ -184,11 +188,11 @@ nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/sc
 
 GitHub Actions publishes the Rust CLI crate to crates.io when a tag matching
 `vMAJOR.MINOR.PATCH` is pushed. The tag version must match
-`rust/Cargo.toml`, so the `0.5.0` release is:
+`rust/Cargo.toml`, so the `0.7.0` release is:
 
 ```sh
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 The release workflow runs the Nix flake check, Rust formatting, clippy, tests,

@@ -94,7 +94,8 @@ publisher/subscriber declarations exposed by Zenoh admin-space.
 
 ## Bag Format
 
-Bags use the frozen `synapse/1` MCAP profile built into `synapse_fbs` 0.8.
+Bags use the frozen `synapse/1` MCAP profile built into the pinned
+`synapse_fbs` release.
 Recordings contain the required schema-set hash, random session id, source,
 and Unix-epoch time-basis metadata; `--source` identifies the recorder and
 defaults to `csyn`.

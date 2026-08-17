@@ -2776,9 +2776,9 @@ dependencies = [
 
 [[package]]
 name = "synapse_fbs"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9036026b85b238cd565243cda018f0c892c3f2dc72f2cdf5df2216a7c0a3f3bf"
+checksum = "bcc389bb1e08bf4f22c8ecf17e1eb19244ae32791ee10f9dcaa9705b06467248"
 dependencies = [
  "flatbuffers",
  "mcap",
