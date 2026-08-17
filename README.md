@@ -144,45 +144,56 @@ Formatting is enforced with the Zephyr `.clang-format` and rustfmt. Board
 targets may be added to `platform_allow` for optional local twister runs,
 but must stay out of `integration_platforms` so CI never needs hardware.
 
-The Nix flake provides host tools only; Zephyr and zros revisions still come
-from `west.yml`. Enter the development shell from the csyn repo root with:
+Host checks require GNU Make and rustup. They use the Rust toolchain pinned in
+`rust-toolchain.toml` plus `clang-format-18`. On Ubuntu 24.04, install the
+native host tools with:
 
 ```sh
-nix develop
+sudo apt-get install clang-format-18 make
 ```
 
-Inside that shell, the normal host tools are available:
+Rustup reads `rust-toolchain.toml` automatically. Run the native checks from
+the repository root:
 
 ```sh
-cargo test --locked --manifest-path rust/Cargo.toml
-clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
-west --version
+make fmt
+make lint-rust
+make test-rust
 ```
 
-You can also run host checks without entering a shell:
+Run all host checks with:
 
 ```sh
-nix develop -c cargo fmt --check --manifest-path rust/Cargo.toml
-nix develop -c clang-format --dry-run -Werror zephyr/src/*.c zephyr/include/csyn/*.h zephyr/tests/csyn/basic/src/*.c
-nix develop -c cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
-nix develop -c cargo test --locked --manifest-path rust/Cargo.toml
+make check-rust
+make fmt-c
 ```
 
-Run Twister from an existing west workspace with:
+Twister additionally requires the native Zephyr build packages and a Python
+environment containing the pinned west release:
 
 ```sh
-nix develop -c west twister -T zephyr/tests -v --inline-logs --integration
+sudo apt-get install \
+  build-essential ccache cmake device-tree-compiler file \
+  g++-multilib gcc-multilib git gperf make ninja-build \
+  python3-dev python3-pip python3-venv
+python3 -m venv /path/to/zephyr-venv
+/path/to/zephyr-venv/bin/pip install --upgrade pip
+/path/to/zephyr-venv/bin/pip install -r .github/requirements-zephyr.txt
+/path/to/zephyr-venv/bin/pip install \
+  -r /path/to/workspace/zephyr/scripts/requirements.txt
 ```
 
-For a fresh Zephyr workspace, keep csyn checked out at `modules/lib/csyn`,
-then initialize and update west from the workspace root:
+From an initialized west workspace, give the native command the exact Zephyr
+checkout and Python environment:
 
 ```sh
-mkdir -p .west
-printf '[manifest]\npath = modules/lib/csyn\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n' > .west/config
-nix develop ./modules/lib/csyn -c west update
-nix develop ./modules/lib/csyn -c env ZEPHYR_BASE="$PWD/zephyr" python zephyr/scripts/twister -T modules/lib/csyn/zephyr/tests -v --inline-logs --integration
+make -C /path/to/csyn test-zephyr \
+  ZEPHYR_BASE=/path/to/workspace/zephyr \
+  PYTHON=/path/to/zephyr-venv/bin/python
 ```
+
+The CI-only `west.yml` pins Zephyr and zros. Vehicle workspaces continue to
+select their own manifests and revisions.
 
 ## Releases
 
@@ -195,10 +206,10 @@ git tag v0.7.0
 git push origin v0.7.0
 ```
 
-The release workflow runs the Nix flake check, Rust formatting, clippy, tests,
-and a `cargo publish --dry-run` before publishing. crates.io Trusted Publishing
-is configured for the `CogniPilot/csyn` repository and the `release.yml`
-workflow, so no repository publish secret is required.
+The release workflow runs the pinned native Rust formatting, Clippy, tests,
+and a `cargo publish --dry-run` before publishing. crates.io Trusted
+Publishing is configured for the `CogniPilot/csyn` repository and the
+`release.yml` workflow, so no repository publish secret is required.
 
 ## License
 

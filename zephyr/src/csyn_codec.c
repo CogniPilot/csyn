@@ -59,7 +59,7 @@ void csyn_euler_from_quatf(const synapse_types_Quaternionf_t *quat, float *roll,
  * Compact per-rigid-body pose published by mocap bridges
  * (synapse_qualisys_bridge and the electrode ground station) on
  * `synapse/mocap/rigid_body/<name>/pose`: 7 little-endian f32 values
- * [px, py, pz, qx, qy, qz, qw] — ENU metres, quaternion scalar (w) LAST.
+ * [px, py, pz, qx, qy, qz, qw] - ENU metres, quaternion scalar (w) LAST.
  */
 #define CSYN_MOCAP_COMPACT_POSE_SIZE (7U * sizeof(float))
 

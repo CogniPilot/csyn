@@ -131,7 +131,7 @@ uint32_t csyn_topic_generation(const struct csyn_topic *topic)
  * consumes this 40-byte broadcast on the old topic key. The id sits above
  * the generated catalog range (0.3.3 used 22, which later releases
  * reassigned), and the schema fingerprint is a fixed marker for this legacy
- * layout — the ground station never validates the value contract.
+ * layout - the ground station never validates the value contract.
  */
 static const synapse_topic_info_t g_vehicle_command_info = {
 	.id = 65001,

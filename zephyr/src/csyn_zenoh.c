@@ -235,7 +235,7 @@ static void mocap_input_handler_common(z_loaned_sample_t *sample, void *arg, boo
 	z_view_string_t key_view;
 	uint8_t buf[CONFIG_CSYN_FLATBUFFER_MAX_SIZE];
 	size_t payload_len = z_bytes_len(z_sample_payload(sample));
-	/* Sample-count freshness: no kernel clock — this callback runs on the
+	/* Sample-count freshness: no kernel clock - this callback runs on the
 	 * zenoh rx thread, which is not a Zephyr thread on native_sim.
 	 */
 	static int suppress_fallback;
@@ -314,7 +314,8 @@ static int config_init(z_owned_config_t *config)
 	 * directly so the topology is static and discovery-free.
 	 */
 	if (!is_client && CONFIG_CSYN_ZENOH_CONNECT[0] != '\0') {
-		rc = zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, CONFIG_CSYN_ZENOH_CONNECT);
+		rc = zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY,
+				      CONFIG_CSYN_ZENOH_CONNECT);
 		if (rc < 0) {
 			return rc;
 		}
@@ -550,7 +551,7 @@ static int open_session(z_owned_session_t *session)
 		}
 
 		/* The frame stream is high-rate; only pull it off the network
-		 * when it is the selected mocap source. The canonical 0.8 mocap
+		 * when it is the selected mocap source. The canonical mocap
 		 * topic uses MocapPoseFrame and requires its value contract; the
 		 * separately configured legacy compact-pose key remains untyped.
 		 */

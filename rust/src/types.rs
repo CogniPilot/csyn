@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_the_0_8_topic_keys() {
+    fn uses_the_pinned_topic_keys() {
         assert_eq!(
             TopicType::infer("qualisys/cub1/odom").unwrap().topic.name,
             "Odometry"

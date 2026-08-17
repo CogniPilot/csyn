@@ -104,8 +104,8 @@ static struct bridge_tx_map g_tx_maps[] = {
 	 CONFIG_CSYN_ZROS_BRIDGE_LOOP_RATE_HZ},
 	{&topic_mission_progress, "mission", &g_mission_progress_msg,
 	 sizeof(g_mission_progress_msg), CONFIG_CSYN_ZROS_BRIDGE_MISSION_RATE_HZ},
-	{&topic_local_position_command, "pos_sp", &g_local_pos_cmd_msg,
-	 sizeof(g_local_pos_cmd_msg), CONFIG_CSYN_ZROS_BRIDGE_POS_SP_RATE_HZ},
+	{&topic_local_position_command, "pos_sp", &g_local_pos_cmd_msg, sizeof(g_local_pos_cmd_msg),
+	 CONFIG_CSYN_ZROS_BRIDGE_POS_SP_RATE_HZ},
 	{&topic_trajectory_segment, "traj", &g_trajectory_segment_msg,
 	 sizeof(g_trajectory_segment_msg), CONFIG_CSYN_ZROS_BRIDGE_TRAJ_RATE_HZ},
 	{&topic_vehicle_command, "vehicle_command", &g_vehicle_cmd_msg, sizeof(g_vehicle_cmd_msg),
@@ -249,8 +249,8 @@ static void publish_optical_flow_vel_if_updated(struct csyn_topic *topic, uint32
 	size_t len = 0U;
 
 	if (topic == NULL ||
-	    !copy_csyn_topic(topic, (uint8_t *)&g_optical_flow_vel, sizeof(g_optical_flow_vel), &len,
-			     last_generation) ||
+	    !copy_csyn_topic(topic, (uint8_t *)&g_optical_flow_vel, sizeof(g_optical_flow_vel),
+			     &len, last_generation) ||
 	    len != sizeof(g_optical_flow_vel)) {
 		return;
 	}

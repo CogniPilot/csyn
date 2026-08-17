@@ -149,7 +149,7 @@ ZTEST(csyn_codec, test_quat_euler_roundtrip)
 /*
  * The compact mocap pose published by synapse_qualisys_bridge (and the
  * electrode ground station) is 7 little-endian f32 values
- * [px, py, pz, qx, qy, qz, qw] — quaternion scalar LAST on the wire.
+ * [px, py, pz, qx, qy, qz, qw] - quaternion scalar LAST on the wire.
  */
 ZTEST(csyn_codec, test_decode_compact_mocap_pose)
 {
