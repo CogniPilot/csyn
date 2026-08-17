@@ -118,6 +118,27 @@ Layout (everything for the module lives under `zephyr/`):
 - `zephyr/{module.yml,Kconfig,CMakeLists.txt}` - west integration and the
   pinned synapse_fbs release
 
+### Local schema source override
+
+An unpublished synapse_fbs change can be compiled without creating a tag or
+release. Generate the local C package in the synapse_fbs checkout first:
+
+```sh
+make local-offline
+```
+
+Pass its absolute package path to the existing Zephyr build command:
+
+```sh
+-- -DFETCHCONTENT_SOURCE_DIR_SYNAPSE_FBS_C:PATH=/absolute/path/to/synapse_fbs/target/xtask/packages/c
+```
+
+Ordinary Zephyr builds consume the standard CMake FetchContent source
+override directly. In sysbuild, csyn imports the same global cache value into
+each image, so one command-line value covers the application and bootloader.
+The generated package is used instead of the release archive and requires no
+schema publication or network fetch.
+
 ## Rust CLI
 
 The host tool lives in `rust/`:

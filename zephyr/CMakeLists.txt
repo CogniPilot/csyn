@@ -33,6 +33,10 @@ configure_file(
   @ONLY
 )
 
+if(SYSBUILD AND TARGET sysbuild_cache AND COMMAND zephyr_get)
+  zephyr_get(FETCHCONTENT_SOURCE_DIR_SYNAPSE_FBS_C SYSBUILD GLOBAL)
+endif()
+
 FetchContent_Declare(synapse_fbs_c
   URL ${CSYN_SYNAPSE_FBS_C_URL}
   URL_HASH ${CSYN_SYNAPSE_FBS_C_URL_HASH}
